@@ -18,9 +18,10 @@ use crate::layout::cairo_search_highlight_rects;
 use crate::printing::PrintService;
 use crate::session::{
     last_directory_for_home_path, last_window_geometry_for_home_path, load_recent_documents,
-    newest_valid_recent_document, remember_window_geometry, toggle_favorite_document,
+    newest_valid_recent_document, remember_window_geometry,
 };
 use crate::sidebar::build_sidebar;
+use crate::ui_commands::{dispatch_ui_command, UiCommand};
 use crate::ui_helpers::action_button;
 use crate::viewer_state::{LayoutMode, ViewerState, DEFAULT_ZOOM};
 
@@ -83,8 +84,6 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     menu_bar.append(&menu_tabs);
     menu_bar.append(&menu_bookmarks);
     menu_bar.append(&menu_help);
-    shell.append(&menu_bar);
-
     let header = gtk::HeaderBar::new();
     let title = gtk::Label::new(Some("gpdfview"));
     header.set_title_widget(Some(&title));
@@ -142,15 +141,20 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     content.append(&sidebar);
     content.append(&notebook);
     shell.append(&header);
+    shell.append(&menu_bar);
     shell.append(&content);
     let open_controller = initial.clone();
     let open_window = window.clone();
     let open_tab_manager = tab_manager.clone();
     let open_app = app.clone();
     let sidebar_toggle = sidebar.clone();
+    let sidebar_command_controller = initial.clone();
     sidebar_button.connect_clicked(move |_| {
-        let visible = sidebar_toggle.is_visible();
-        sidebar_toggle.set_visible(!visible);
+        dispatch_ui_command(
+            &sidebar_command_controller,
+            UiCommand::ToggleSidebar,
+            Some(&sidebar_toggle),
+        );
     });
 
     let menu_open_controller = open_controller.clone();
@@ -168,65 +172,43 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         );
     });
 
-    let menu_print_controller = initial.clone();
+    let menu_tabs_controller = initial.clone();
     menu_tabs.connect_clicked(move |_| {
-        menu_print_controller.status.set_text("Use o botão Abrir para criar uma nova aba com outro documento.");
+        dispatch_ui_command(&menu_tabs_controller, UiCommand::ShowTabsHint, None);
     });
 
     let menu_search_controller = initial.clone();
     menu_edit.connect_clicked(move |_| {
-        menu_search_controller.search_entry.grab_focus();
-        menu_search_controller.search_entry.select_region(0, -1);
+        dispatch_ui_command(&menu_search_controller, UiCommand::FocusSearch, None);
     });
 
     let menu_sidebar = sidebar.clone();
+    let menu_sidebar_controller = initial.clone();
     menu_view.connect_clicked(move |_| {
-        menu_sidebar.set_visible(!menu_sidebar.is_visible());
+        dispatch_ui_command(&menu_sidebar_controller, UiCommand::ToggleSidebar, Some(&menu_sidebar));
     });
 
     let menu_favorite_controller = initial.clone();
     menu_bookmarks.connect_clicked(move |_| {
-        let path = menu_favorite_controller.state.borrow().path.clone();
-        if let Some(path) = path {
-            let enabled = toggle_favorite_document(&path);
-            if enabled {
-                menu_favorite_controller.status.set_text("Documento adicionado aos favoritos.");
-            } else {
-                menu_favorite_controller.status.set_text("Documento removido dos favoritos.");
-            }
-        } else {
-            menu_favorite_controller.status.set_text("Abra um documento para favoritar.");
-        }
+        dispatch_ui_command(&menu_favorite_controller, UiCommand::ToggleFavoriteDocument, None);
     });
 
     let menu_about_controller = initial.clone();
     menu_help.connect_clicked(move |_| {
-        menu_about_controller.status.set_text("gpdfview: visualizador PDF em Rust + GTK4 inspirado no qpdfview.");
+        dispatch_ui_command(&menu_about_controller, UiCommand::ShowAbout, None);
     });
 
-    let fullscreen_window = open_window.clone();
+    let fullscreen_controller = initial.clone();
     fullscreen_button.connect_clicked(move |_| {
-        if fullscreen_window.is_fullscreen() {
-            fullscreen_window.unfullscreen();
-        } else {
-            fullscreen_window.fullscreen();
-        }
+        dispatch_ui_command(&fullscreen_controller, UiCommand::ToggleFullscreen, None);
     });
-    let properties_window = open_window.clone();
     let properties_controller = initial.clone();
     properties_button.connect_clicked(move |_| {
-        properties_controller.show_document_properties();
-        if properties_window.is_fullscreen() {
-            properties_window.fullscreen();
-        }
+        dispatch_ui_command(&properties_controller, UiCommand::ShowDocumentProperties, None);
     });
-    let presentation_window = open_window.clone();
     let presentation_controller = initial.clone();
     presentation_button.connect_clicked(move |_| {
-        presentation_controller.toggle_presentation_mode();
-        if presentation_window.is_fullscreen() {
-            presentation_window.fullscreen();
-        }
+        dispatch_ui_command(&presentation_controller, UiCommand::TogglePresentation, None);
     });
     open_button.connect_clicked({
         let open_controller = open_controller.clone();
@@ -353,6 +335,7 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
         toolbar: toolbar.clone(),
         window: window.clone(),
         root: root.clone(),
+        state_change_hooks: Rc::new(RefCell::new(Vec::new())),
     });
 
     let draw_controller = controller.clone();

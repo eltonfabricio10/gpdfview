@@ -3,7 +3,6 @@ use libadwaita as adw;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::time::Duration;
 
 use crate::app::ViewerController;
 use crate::cache::LruCache;
@@ -410,7 +409,7 @@ pub fn build_sidebar(
     let watch_outline = outline_list.clone();
     let watch_cache = thumbnail_cache.clone();
     let watch_signature = state_signature.clone();
-    gtk4::glib::timeout_add_local(Duration::from_millis(300), move || {
+    controller.subscribe_state_changes(move || {
         let snapshot = {
             let state = watch_controller.state.borrow();
             (
@@ -421,14 +420,15 @@ pub fn build_sidebar(
             )
         };
         let previous = watch_signature.borrow().clone();
-        if snapshot != previous {
-            populate_pages_flow(&watch_flow, &watch_controller, &watch_cache);
-            if snapshot.0 != previous.0 {
-                populate_outline_list(&watch_outline, &watch_controller);
-            }
-            *watch_signature.borrow_mut() = snapshot;
+        if snapshot == previous {
+            return;
         }
-        gtk4::glib::ControlFlow::Continue
+
+        populate_pages_flow(&watch_flow, &watch_controller, &watch_cache);
+        if snapshot.0 != previous.0 {
+            populate_outline_list(&watch_outline, &watch_controller);
+        }
+        *watch_signature.borrow_mut() = snapshot;
     });
 
     sidebar_root

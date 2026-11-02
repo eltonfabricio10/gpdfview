@@ -12,6 +12,7 @@ mod printing;
 mod rendering;
 mod session;
 mod sidebar;
+mod ui_commands;
 mod ui_helpers;
 mod viewer_state;
 mod window;

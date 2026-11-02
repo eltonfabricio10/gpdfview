@@ -41,6 +41,8 @@ use crate::viewer_state::{apply_render_request, normalize_rotation};
 
 pub(crate) const CACHE_LIMIT_BYTES: usize = 128 * 1024 * 1024;
 
+type StateChangeHook = Box<dyn Fn() + 'static>;
+
 #[cfg(test)]
 fn rotated_page_dimensions(width_points: f64, height_points: f64, rotation: i32) -> (f64, f64) {
     match normalize_rotation(rotation) {
@@ -69,6 +71,7 @@ pub(crate) struct ViewerController {
     pub(crate) toolbar: gtk::Box,
     pub(crate) window: adw::ApplicationWindow,
     pub(crate) root: gtk::Box,
+    pub(crate) state_change_hooks: Rc<RefCell<Vec<StateChangeHook>>>,
 }
 
 impl ViewerController {
@@ -84,6 +87,19 @@ impl ViewerController {
 
     pub(crate) fn toggle_presentation_mode(&self) {
         toggle_presentation_mode(self);
+    }
+
+    pub(crate) fn subscribe_state_changes<F>(&self, hook: F)
+    where
+        F: Fn() + 'static,
+    {
+        self.state_change_hooks.borrow_mut().push(Box::new(hook));
+    }
+
+    pub(crate) fn notify_state_changed(&self) {
+        for hook in self.state_change_hooks.borrow().iter() {
+            hook();
+        }
     }
 
     pub(crate) fn open_document(&self, path: PathBuf) {
@@ -123,6 +139,7 @@ impl ViewerController {
             }
         }
         self.status.set_text("Loading first page…");
+        self.notify_state_changed();
         let (page_index, scale, rotation) = {
             let state = self.state.borrow();
             (state.page_index, state.scale, state.rotation)
@@ -132,22 +149,27 @@ impl ViewerController {
 
     pub(crate) fn navigate_to(&self, page_index: i32) {
         navigate_to(self, page_index);
+        self.notify_state_changed();
     }
 
     pub(crate) fn change_zoom(&self, delta: f64) {
         change_zoom(self, delta);
+        self.notify_state_changed();
     }
 
     pub(crate) fn rotate_page(&self, delta: i32) {
         rotate_page(self, delta);
+        self.notify_state_changed();
     }
 
     pub(crate) fn fit_width(&self) {
         fit_width(self);
+        self.notify_state_changed();
     }
 
     pub(crate) fn fit_page(&self) {
         fit_page(self);
+        self.notify_state_changed();
     }
 
     pub(crate) fn request_render(&self, path: PathBuf, page_index: i32, scale: f64, rotation: i32) {
@@ -156,6 +178,7 @@ impl ViewerController {
 
     pub(crate) fn present_page(&self, page: RenderedPage) {
         present_page(self, page);
+        self.notify_state_changed();
     }
 
     pub(crate) fn schedule_prefetch(
@@ -204,6 +227,7 @@ impl ViewerController {
 
     pub(crate) fn search_current_page(&self) {
         search_current_page(self);
+        self.notify_state_changed();
     }
 
     pub(crate) fn focus_global_search_result(&self, index: usize) {
@@ -266,6 +290,7 @@ impl ViewerController {
             target_page + 1,
         ));
         self.area.queue_draw();
+        self.notify_state_changed();
     }
 
     pub(crate) fn scroll_to_search_match(&self, rect: (f64, f64, f64, f64), page_height_points: f64, scale: f64) {
