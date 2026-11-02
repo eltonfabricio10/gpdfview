@@ -291,6 +291,10 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     let bookmarks_toggle_item = append_menu_item(&bookmarks_menu_box, "Alternar favorito", move || {
         dispatch_ui_command(&menu_favorite_controller, UiCommand::ToggleFavoriteDocument, None);
     });
+    let menu_page_bookmark_controller = initial.clone();
+    let page_bookmark_toggle_item = append_menu_item(&bookmarks_menu_box, "Alternar marcador da página", move || {
+        dispatch_ui_command(&menu_page_bookmark_controller, UiCommand::ToggleCurrentPageBookmark, None);
+    });
 
     let menu_about_controller = initial.clone();
     let help_about_item = append_menu_item(&help_menu_box, "Sobre", move || {
@@ -317,6 +321,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         view_close_split_item,
         view_sync_split_item,
         bookmarks_toggle_item,
+        page_bookmark_toggle_item,
     ];
     let sensitivity_controller = initial.clone();
     let refresh_sensitivity = move || {

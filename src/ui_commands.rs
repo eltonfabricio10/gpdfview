@@ -1,7 +1,7 @@
 use gtk4::prelude::*;
 
 use crate::app::ViewerController;
-use crate::session::toggle_favorite_document;
+use crate::session::{toggle_bookmark_page, toggle_favorite_document};
 use crate::viewer_state::SplitViewMode;
 
 pub(crate) enum UiCommand {
@@ -11,6 +11,7 @@ pub(crate) enum UiCommand {
     ShowAbout,
     ToggleFullscreen,
     TogglePresentation,
+    ToggleCurrentPageBookmark,
     ToggleSplitViewHorizontal,
     ToggleSplitViewVertical,
     CloseSplitView,
@@ -65,6 +66,20 @@ pub(crate) fn dispatch_ui_command(
         }
         UiCommand::TogglePresentation => {
             controller.toggle_presentation_mode();
+        }
+        UiCommand::ToggleCurrentPageBookmark => {
+            let Some(path) = controller.state.borrow().path.clone() else {
+                controller.status.set_text("Abra um documento antes de criar um marcador.");
+                return;
+            };
+            let page_index = controller.state.borrow().page_index;
+            let label = format!("Página {}", page_index + 1);
+            let added = toggle_bookmark_page(&path, page_index, Some(&label));
+            if added {
+                controller.status.set_text("Marcador da página atual adicionado.");
+            } else {
+                controller.status.set_text("Marcador da página atual removido.");
+            }
         }
         UiCommand::ToggleSplitViewHorizontal => {
             let mut state = controller.state.borrow_mut();

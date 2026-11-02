@@ -11,6 +11,13 @@ pub struct PersistedDocumentView {
     pub layout_mode: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct AppBookmark {
+    pub path: PathBuf,
+    pub page_index: i32,
+    pub label: String,
+}
+
 pub fn session_storage_dir_for(home: &Path) -> PathBuf {
     let storage = home.join(".local/share/gpdfview");
     let _ = fs::create_dir_all(&storage);
@@ -160,6 +167,122 @@ pub fn is_favorite_document(path: &Path) -> bool {
     load_favorite_documents().iter().any(|favorite| favorite == path)
 }
 
+fn bookmarks_file_for_home(home: &Path) -> PathBuf {
+    session_storage_dir_for(home).join("app_bookmarks.txt")
+}
+
+fn normalize_bookmark_path(path: &Path) -> PathBuf {
+    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+}
+
+fn write_app_bookmarks(home: &Path, entries: &[AppBookmark]) {
+    let file = bookmarks_file_for_home(home);
+    let content = entries
+        .iter()
+        .map(|entry| {
+            format!(
+                "{}\t{}\t{}",
+                entry.path.to_string_lossy(),
+                entry.page_index,
+                entry.label
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+    let _ = fs::write(file, format!("{content}\n"));
+}
+
+fn load_all_app_bookmarks_for_home(home: &Path) -> Vec<AppBookmark> {
+    let file = bookmarks_file_for_home(home);
+    let Ok(content) = fs::read_to_string(file) else {
+        return Vec::new();
+    };
+
+    let mut entries = Vec::new();
+    for line in content.lines() {
+        let mut parts = line.splitn(3, '\t');
+        let Some(path) = parts.next() else {
+            continue;
+        };
+        let Some(page_index) = parts.next().and_then(|value| value.parse::<i32>().ok()) else {
+            continue;
+        };
+        let label = parts.next().unwrap_or_default().to_string();
+        entries.push(AppBookmark {
+            path: PathBuf::from(path),
+            page_index,
+            label,
+        });
+    }
+    entries
+}
+
+pub fn load_bookmarks_for_home(home: &Path, path: &Path) -> Vec<AppBookmark> {
+    let document_path = normalize_bookmark_path(path);
+    let mut bookmarks = load_all_app_bookmarks_for_home(home)
+        .into_iter()
+        .filter(|bookmark| normalize_bookmark_path(&bookmark.path) == document_path)
+        .collect::<Vec<_>>();
+    bookmarks.sort_by_key(|bookmark| bookmark.page_index);
+    bookmarks
+}
+
+pub fn load_document_bookmarks(path: &Path) -> Vec<AppBookmark> {
+    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    load_bookmarks_for_home(Path::new(&home), path)
+}
+
+pub fn toggle_bookmark_page(path: &Path, page_index: i32, label: Option<&str>) -> bool {
+    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    toggle_bookmark_for_home(Path::new(&home), path, page_index, label)
+}
+
+pub fn toggle_bookmark_for_home(home: &Path, document_path: &Path, page_index: i32, label: Option<&str>) -> bool {
+    let canonical_path = normalize_bookmark_path(document_path);
+    let bookmarks = load_all_app_bookmarks_for_home(home);
+    let existing = bookmarks.iter().any(|bookmark| {
+        normalize_bookmark_path(&bookmark.path) == canonical_path && bookmark.page_index == page_index
+    });
+
+    if existing {
+        let next = bookmarks
+            .into_iter()
+            .filter(|bookmark| {
+                normalize_bookmark_path(&bookmark.path) != canonical_path
+                    || bookmark.page_index != page_index
+            })
+            .collect::<Vec<_>>();
+        write_app_bookmarks(home, &next);
+        return false;
+    }
+
+    let bookmark_label = match label.map(str::trim).filter(|value| !value.is_empty()) {
+        Some(value) => value.to_string(),
+        None => format!("Página {}", page_index + 1),
+    };
+
+    let mut next = bookmarks;
+    next.push(AppBookmark {
+        path: canonical_path,
+        page_index,
+        label: bookmark_label,
+    });
+    write_app_bookmarks(home, &next);
+    true
+}
+
+pub fn remove_bookmark_page(path: &Path, page_index: i32) -> bool {
+    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    let canonical_path = normalize_bookmark_path(path);
+    let mut bookmarks = load_all_app_bookmarks_for_home(Path::new(&home));
+    let original_len = bookmarks.len();
+    bookmarks.retain(|bookmark| {
+        normalize_bookmark_path(&bookmark.path) != canonical_path || bookmark.page_index != page_index
+    });
+    write_app_bookmarks(Path::new(&home), &bookmarks);
+    original_len != bookmarks.len()
+}
+
 fn document_state_file(home: &Path) -> PathBuf {
     session_storage_dir_for(home).join("document_state.txt")
 }
@@ -301,6 +424,36 @@ mod tests {
         assert_eq!(restored.rotation, 90);
         assert_eq!(restored.layout_mode, "continuous");
         assert!((restored.scale - 1.25).abs() < 0.0001);
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn app_bookmarks_persist_per_document_and_page() {
+        let base = std::env::temp_dir().join(format!(
+            "gpdfview-bookmarks-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch available")
+                .as_nanos()
+        ));
+        let home = base.join("home");
+        let docs = home.join("docs");
+        let _ = fs::create_dir_all(&docs);
+        let doc = docs.join("sample.pdf");
+        let _ = fs::write(&doc, b"pdf");
+
+        let added = toggle_bookmark_for_home(&home, &doc, 3, Some("Resumo"));
+        assert!(added);
+        let stored = load_bookmarks_for_home(&home, &doc);
+        assert_eq!(stored.len(), 1);
+        assert_eq!(stored[0].page_index, 3);
+        assert_eq!(stored[0].label, "Resumo");
+
+        let removed = toggle_bookmark_for_home(&home, &doc, 3, None);
+        assert!(!removed);
+        assert!(load_bookmarks_for_home(&home, &doc).is_empty());
 
         let _ = fs::remove_dir_all(&base);
     }

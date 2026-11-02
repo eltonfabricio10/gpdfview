@@ -9,7 +9,8 @@ use crate::cache::LruCache;
 use crate::document_actions::open_document_in_new_tab;
 use crate::document_tabs::DocumentTabManager;
 use crate::session::{
-    is_favorite_document, load_favorite_documents, load_recent_documents, toggle_favorite_document,
+    is_favorite_document, load_document_bookmarks, load_favorite_documents, load_recent_documents,
+    remove_bookmark_page, toggle_favorite_document,
 };
 use crate::viewer_state::RenderKey;
 
@@ -274,6 +275,78 @@ fn populate_outline_list(list: &gtk4::ListBox, controller: &ViewerController) {
     }
 }
 
+fn populate_app_bookmarks_list(list: &gtk4::ListBox, controller: &ViewerController) {
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
+
+    let Some(path) = controller.state.borrow().path.clone() else {
+        let row = gtk4::ListBoxRow::new();
+        let label = gtk4::Label::new(Some("Abra um documento para criar marcadores de página."));
+        label.set_xalign(0.0);
+        label.set_wrap(true);
+        label.set_margin_start(8);
+        label.set_margin_end(8);
+        label.set_margin_top(4);
+        label.set_margin_bottom(4);
+        row.set_child(Some(&label));
+        list.append(&row);
+        return;
+    };
+
+    let bookmarks = load_document_bookmarks(&path);
+    if bookmarks.is_empty() {
+        let row = gtk4::ListBoxRow::new();
+        let label = gtk4::Label::new(Some("Nenhum marcador desta página."));
+        label.set_xalign(0.0);
+        label.set_wrap(true);
+        label.set_margin_start(8);
+        label.set_margin_end(8);
+        label.set_margin_top(4);
+        label.set_margin_bottom(4);
+        row.set_child(Some(&label));
+        list.append(&row);
+        return;
+    }
+
+    for bookmark in bookmarks {
+        let row = gtk4::ListBoxRow::new();
+        let row_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
+        row_box.set_margin_start(8);
+        row_box.set_margin_end(8);
+        row_box.set_margin_top(4);
+        row_box.set_margin_bottom(4);
+
+        let label = gtk4::Label::new(Some(&bookmark.label));
+        label.set_xalign(0.0);
+        label.set_hexpand(true);
+        row_box.append(&label);
+
+        let page_label = gtk4::Label::new(Some(&format!("P{}", bookmark.page_index + 1)));
+        page_label.set_xalign(1.0);
+        row_box.append(&page_label);
+
+        let bookmark_page = bookmark.page_index;
+        let bookmark_path = bookmark.path.clone();
+        let bookmark_controller = controller.clone();
+        row.connect_activate(move |_| {
+            bookmark_controller.navigate_to(bookmark_page);
+        });
+
+        let remove_button = gtk4::Button::with_label("×");
+        remove_button.set_has_frame(false);
+        remove_button.set_tooltip_text(Some("Remover marcador"));
+        let remove_path = bookmark_path.clone();
+        let remove_page = bookmark_page;
+        remove_button.connect_clicked(move |_| {
+            let _ = remove_bookmark_page(&remove_path, remove_page);
+        });
+        row_box.append(&remove_button);
+        row.set_child(Some(&row_box));
+        list.append(&row);
+    }
+}
+
 fn populate_search_results_list(list: &gtk4::ListBox, controller: &ViewerController) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
@@ -487,6 +560,21 @@ pub fn build_sidebar(
     favorites_expander.set_visible(false);
     sidebar.append(&favorites_expander);
 
+    let app_bookmarks_list = gtk4::ListBox::new();
+    app_bookmarks_list.set_selection_mode(gtk4::SelectionMode::Single);
+    app_bookmarks_list.set_css_classes(&["boxed-list"]);
+    populate_app_bookmarks_list(&app_bookmarks_list, &controller);
+    let app_bookmarks_section = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+    let app_bookmarks_title = gtk4::Label::new(Some("<b>Marcadores</b>"));
+    app_bookmarks_title.set_use_markup(true);
+    app_bookmarks_title.set_xalign(0.0);
+    app_bookmarks_section.append(&app_bookmarks_title);
+    app_bookmarks_section.append(&app_bookmarks_list);
+    let app_bookmarks_expander = gtk4::Expander::new(Some("Marcadores do app"));
+    app_bookmarks_expander.set_expanded(false);
+    app_bookmarks_expander.set_child(Some(&app_bookmarks_section));
+    sidebar.append(&app_bookmarks_expander);
+
     {
         let thumbnails_section = thumbnails_section.clone();
         mini_toggle.connect_toggled(move |button| {
@@ -532,6 +620,7 @@ pub fn build_sidebar(
     let watch_outline = outline_list.clone();
     let watch_cache = thumbnail_cache.clone();
     let watch_search = search_list.clone();
+    let watch_bookmarks = app_bookmarks_list.clone();
     let watch_signature = state_signature.clone();
     controller.subscribe_state_changes(move || {
         let snapshot = {
@@ -554,6 +643,10 @@ pub fn build_sidebar(
         populate_pages_flow(&watch_flow, &watch_controller, &watch_cache);
         if snapshot.0 != previous.0 {
             populate_outline_list(&watch_outline, &watch_controller);
+            populate_app_bookmarks_list(&watch_bookmarks, &watch_controller);
+        }
+        if snapshot.1 != previous.1 || snapshot.0 != previous.0 {
+            populate_app_bookmarks_list(&watch_bookmarks, &watch_controller);
         }
         if snapshot.4 != previous.4 || snapshot.5 != previous.5 || snapshot.6 != previous.6 {
             populate_search_results_list(&watch_search, &watch_controller);
