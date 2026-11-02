@@ -6,7 +6,7 @@ use adw::prelude::*;
 use gtk4 as gtk;
 use gtk4::cairo::{Format, ImageSurface};
 use gtk::{gio, glib};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -57,6 +57,7 @@ struct ViewerController {
     area: gtk::DrawingArea,
     scrolled: gtk::ScrolledWindow,
     page_spin: gtk::SpinButton,
+    suppress_spin_events: Rc<Cell<bool>>,
     page_total: gtk::Label,
     zoom_label: gtk::Label,
     status: gtk::Label,
@@ -65,11 +66,17 @@ struct ViewerController {
 }
 
 impl ViewerController {
+    fn set_page_spin_value(&self, value: f64) {
+        self.suppress_spin_events.set(true);
+        self.page_spin.set_value(value);
+        self.suppress_spin_events.set(false);
+    }
+
     fn open_document(&self, path: PathBuf) {
         self.cache.borrow_mut().clear();
         *self.surface.borrow_mut() = None;
         self.page_spin.set_sensitive(false);
-        self.page_spin.set_value(1.0);
+        self.set_page_spin_value(1.0);
         self.page_total.set_text("/ …");
         self.zoom_label.set_text("100%");
         self.print_button.set_sensitive(true);
@@ -120,7 +127,7 @@ impl ViewerController {
     }
 
     fn fit_width(&self) {
-        let width = f64::from(self.scrolled.allocated_width().saturating_sub(32).max(1));
+        let width = f64::from(self.scrolled.width().saturating_sub(32).max(1));
         let (path, page_index, scale) = {
             let mut state = self.state.borrow_mut();
             if state.page_width_points <= 0.0 {
@@ -156,9 +163,10 @@ impl ViewerController {
         self.zoom_label
             .set_text(&format!("{:.0}%", key.scale() * 100.0));
 
-        if let Some(cached) = self.cache.borrow_mut().get(&key).cloned() {
+        let cached = { self.cache.borrow_mut().get(&key).cloned() };
+        if let Some(cached) = cached {
             *self.surface.borrow_mut() = Some(cached);
-            self.page_spin.set_value(f64::from(page_index + 1));
+            self.set_page_spin_value(f64::from(page_index + 1));
             self.area.queue_draw();
             self.status.set_text("Page loaded from memory cache");
             let page_count = self.state.borrow().page_count;
@@ -237,7 +245,7 @@ impl ViewerController {
         self.area.queue_draw();
         self.page_spin
             .set_range(1.0, f64::from(page.page_count.max(1)));
-        self.page_spin.set_value(f64::from(page.page_index + 1));
+        self.set_page_spin_value(f64::from(page.page_index + 1));
         self.page_spin.set_sensitive(page.page_count > 0);
         self.page_total.set_text(&format!("/ {}", page.page_count));
         self.zoom_label
@@ -320,6 +328,9 @@ pub fn run() {
     let app = adw::Application::builder()
         .application_id("io.github.eltonfabricio10.gpdfview")
         .build();
+    app.connect_startup(|_| {
+        adw::StyleManager::default().set_color_scheme(adw::ColorScheme::Default);
+    });
     app.set_flags(gio::ApplicationFlags::HANDLES_OPEN);
     let controller_slot = Rc::new(RefCell::new(None::<ViewerController>));
 
@@ -476,6 +487,7 @@ fn build_ui(app: &adw::Application) -> Option<ViewerController> {
         area: drawing_area,
         scrolled,
         page_spin,
+        suppress_spin_events: Rc::new(Cell::new(false)),
         page_total,
         zoom_label,
         status,
@@ -539,8 +551,12 @@ fn build_ui(app: &adw::Application) -> Option<ViewerController> {
     let page_spin = controller.page_spin.clone();
     let spin_controller = controller.clone();
     page_spin.connect_value_changed(move |spin| {
-        if spin.is_sensitive() {
-            spin_controller.navigate_to(spin.value_as_int() - 1);
+        if spin_controller.suppress_spin_events.get() || !spin.is_sensitive() {
+            return;
+        }
+        let target_page = spin.value_as_int() - 1;
+        if target_page != spin_controller.state.borrow().page_index {
+            spin_controller.navigate_to(target_page);
         }
     });
     let zoom_out_controller = controller.clone();
