@@ -287,6 +287,66 @@ fn load_document(path: &PathBuf) -> Result<Document, String> {
     Document::from_file(&file.uri(), None).map_err(|error| error.to_string())
 }
 
+pub fn document_properties(path: &PathBuf) -> Result<String, String> {
+    let document = load_document(path)?;
+    let fallback_title = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("Untitled PDF")
+        .to_string();
+    let title = document
+        .title()
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| fallback_title.clone());
+    let author = document
+        .author()
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "Unknown".to_string());
+    let subject = document
+        .subject()
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "Unknown".to_string());
+    let creator = document
+        .creator()
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "Unknown".to_string());
+    let producer = document
+        .producer()
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "Unknown".to_string());
+    let page_count = document.n_pages().to_string();
+    let pdf_version = document
+        .pdf_version_string()
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "Unknown".to_string());
+
+    let properties = [
+        ("Title", title),
+        ("Author", author),
+        ("Subject", subject),
+        ("Creator", creator),
+        ("Producer", producer),
+        ("Pages", page_count),
+        ("PDF version", pdf_version),
+    ]
+    .into_iter()
+    .filter_map(|(label, value)| {
+        let normalized = value.trim();
+        if normalized.is_empty() {
+            None
+        } else {
+            Some(format!("{label}: {normalized}"))
+        }
+    })
+    .collect::<Vec<_>>();
+
+    if properties.is_empty() {
+        Ok("No document properties available.".to_string())
+    } else {
+        Ok(properties.join("\n"))
+    }
+}
+
 fn normalize_rotation(rotation: i32) -> i32 {
     let normalized = rotation.rem_euclid(360);
     if normalized == 360 { 0 } else { normalized }
@@ -446,6 +506,13 @@ mod tests {
         let fixture = PdfFixture::two_page();
         let matches = super::find_text_in_page(&fixture.0, 0, "First").expect("search should work");
         assert!(matches > 0, "expected at least one match for 'First'");
+    }
+
+    #[test]
+    fn document_properties_include_page_count_even_without_metadata() {
+        let fixture = PdfFixture::two_page();
+        let properties = super::document_properties(&fixture.0).expect("document metadata should be readable");
+        assert!(properties.contains("Pages: 2"), "expected page count in metadata output: {properties}");
     }
 
     #[test]

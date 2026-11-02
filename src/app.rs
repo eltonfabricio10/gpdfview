@@ -462,6 +462,49 @@ impl ViewerController {
         self.renderer.prefetch(path, &pages, scale, generation, rotation);
     }
 
+    fn show_document_properties(&self) {
+        let Some(path) = self.state.borrow().path.clone() else {
+            self.status.set_text("Open a PDF document before viewing its properties.");
+            return;
+        };
+
+        match crate::engine::document_properties(&path) {
+            Ok(properties) => {
+                let dialog = gtk::Window::new();
+                dialog.set_title(Some("Document properties"));
+                dialog.set_transient_for(Some(&self.window));
+                dialog.set_modal(true);
+                dialog.set_default_size(420, 220);
+
+                let content = gtk::Box::new(gtk::Orientation::Vertical, 8);
+                content.set_margin_top(12);
+                content.set_margin_start(12);
+                content.set_margin_end(12);
+                content.set_margin_bottom(12);
+
+                let label = gtk::Label::new(Some(&properties));
+                label.set_xalign(0.0);
+                label.set_yalign(0.0);
+                label.set_wrap(true);
+                label.set_selectable(true);
+                content.append(&label);
+
+                let close_button = gtk::Button::with_label("Close");
+                let dialog_for_close = dialog.clone();
+                close_button.connect_clicked(move |_| {
+                    dialog_for_close.close();
+                });
+                content.append(&close_button);
+                dialog.set_child(Some(&content));
+                dialog.present();
+            }
+            Err(error) => {
+                self.status
+                    .set_text(&format!("Could not read PDF properties: {error}"));
+            }
+        }
+    }
+
     fn show_error(&self, error: RenderError) {
         if error.generation == self.state.borrow().generation {
             self.status
@@ -1356,6 +1399,8 @@ fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     header.pack_end(&fullscreen_button);
     let presentation_button = action_button("view-presentation-symbolic", "Toggle presentation mode");
     header.pack_end(&presentation_button);
+    let properties_button = action_button("document-properties-symbolic", "Document properties");
+    header.pack_end(&properties_button);
     let print_button = action_button("printer-symbolic", "Send the current PDF to the default printer");
     print_button.set_sensitive(false);
     header.pack_end(&print_button);
@@ -1408,6 +1453,14 @@ fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
             fullscreen_window.unfullscreen();
         } else {
             fullscreen_window.fullscreen();
+        }
+    });
+    let properties_window = open_window.clone();
+    let properties_controller = initial.clone();
+    properties_button.connect_clicked(move |_| {
+        properties_controller.show_document_properties();
+        if properties_window.is_fullscreen() {
+            properties_window.fullscreen();
         }
     });
     let presentation_window = open_window.clone();
