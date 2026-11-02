@@ -31,6 +31,7 @@ enum KeyAction {
     RotateRight,
     OpenFile,
     FocusSearch,
+    ToggleFullscreen,
 }
 
 fn normalize_rotation(rotation: i32) -> i32 {
@@ -59,6 +60,9 @@ fn resolve_key_action(key: &str, modifiers: u32) -> Option<KeyAction> {
     }
     if has_ctrl && lowered == "f" {
         return Some(KeyAction::FocusSearch);
+    }
+    if lowered == "f11" {
+        return Some(KeyAction::ToggleFullscreen);
     }
 
     match lowered.as_str() {
@@ -130,6 +134,7 @@ struct ViewerController {
     status: gtk::Label,
     print_button: gtk::Button,
     title: gtk::Label,
+    window: adw::ApplicationWindow,
     root: gtk::Box,
 }
 
@@ -170,6 +175,15 @@ impl ViewerController {
                 self.search_entry.grab_focus();
                 self.search_entry.select_region(0, -1);
             }
+            KeyAction::ToggleFullscreen => self.toggle_fullscreen(),
+        }
+    }
+
+    fn toggle_fullscreen(&self) {
+        if self.window.is_fullscreen() {
+            self.window.unfullscreen();
+        } else {
+            self.window.fullscreen();
         }
     }
 
@@ -615,6 +629,7 @@ mod tests {
         assert_eq!(resolve_key_action("plus", 0), Some(KeyAction::ZoomIn));
         assert_eq!(resolve_key_action("minus", 0), Some(KeyAction::ZoomOut));
         assert_eq!(resolve_key_action("f", 0), Some(KeyAction::FitWidth));
+        assert_eq!(resolve_key_action("F11", 0), Some(KeyAction::ToggleFullscreen));
         assert_eq!(
             resolve_key_action("f", gtk::gdk::ModifierType::CONTROL_MASK.bits()),
             Some(KeyAction::FocusSearch)
@@ -1319,6 +1334,8 @@ fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     header.pack_start(&sidebar_button);
     let open_button = action_button("document-open-symbolic", "Open a PDF document");
     header.pack_start(&open_button);
+    let fullscreen_button = action_button("view-fullscreen-symbolic", "Toggle fullscreen");
+    header.pack_end(&fullscreen_button);
     let print_button = action_button("printer-symbolic", "Send the current PDF to the default printer");
     print_button.set_sensitive(false);
     header.pack_end(&print_button);
@@ -1364,6 +1381,14 @@ fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     sidebar_button.connect_clicked(move |_| {
         let visible = sidebar_toggle.is_visible();
         sidebar_toggle.set_visible(!visible);
+    });
+    let fullscreen_window = open_window.clone();
+    fullscreen_button.connect_clicked(move |_| {
+        if fullscreen_window.is_fullscreen() {
+            fullscreen_window.unfullscreen();
+        } else {
+            fullscreen_window.fullscreen();
+        }
     });
     open_button.connect_clicked({
         let open_controller = open_controller.clone();
@@ -1478,6 +1503,7 @@ fn create_document_controller(
         status,
         print_button,
         title,
+        window: window.clone(),
         root: root.clone(),
     });
 
