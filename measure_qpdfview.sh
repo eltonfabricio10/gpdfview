@@ -1,37 +1,36 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-pdf="$1"
+pdf="${1:-}"
+if [[ -z "$pdf" || ! -f "$pdf" ]]; then
+  echo "Usage: $0 <pdf-file>" >&2
+  exit 1
+fi
+
 pdf_name=$(basename "$pdf")
 echo "=== Measuring $pdf_name ==="
 
 for iteration in 1 2 3; do
   echo "Iteration $iteration:"
-  
-  # Registra timestamp inicial
-  start=$(date +%s%N)
-  
-  # Inicia qpdfview em background
-  qpdfview "$pdf" > /dev/null 2>&1 &
-  PID=$!
-  
-  # Espera um pouco para certeza de que está aberto
+
+  start_ns=$(date +%s%N)
+  qpdfview "$pdf" >/dev/null 2>&1 &
+  pid=$!
+
   sleep 0.3
-  
-  # Captura memória (RSS em KB)
-  if [[ -f /proc/$PID/status ]]; then
-    mem_kb=$(grep "^VmRSS" /proc/$PID/status | awk '{print $2}')
-    echo "  Memory (RSS): ${mem_kb} KB"
+
+  rss_kb=0
+  if [[ -f "/proc/$pid/status" ]]; then
+    rss_kb=$(awk '/^VmRSS/ {print $2}' "/proc/$pid/status")
   fi
-  
-  # Mata processo
-  kill $PID 2>/dev/null
-  wait $PID 2>/dev/null
-  
-  # Timestamp final
-  end=$(date +%s%N)
-  elapsed_ms=$(( (end - start) / 1000000 ))
+  echo "  Memory (RSS): ${rss_kb} KB"
+
+  kill "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+
+  end_ns=$(date +%s%N)
+  elapsed_ms=$(((end_ns - start_ns) / 1000000))
   echo "  Wall time: ${elapsed_ms} ms"
-  
-  # Pausa entre iterações
+
   sleep 0.2
 done

@@ -24,11 +24,11 @@ Cargo:  1.99.0 (5f94df478 2026-08-27) (Arch Linux rust 1:1.99.0-1)
 
 ### Hardware e Sistema Operacional
 ```
-CPU:        [executar lscpu]
-RAM:        [executar free -h]
-Kernel:     [executar uname -r]
-Desktop:    [executar echo $XDG_CURRENT_DESKTOP]
-Display:    [verificar saída de xrandr]
+CPU:        8 logical CPUs (model info not reported by lscpu in this environment)
+RAM:        15Gi total / 5.5Gi used / 9.8Gi available
+Kernel:     6.12.112-1-MANJARO
+Desktop:    KDE
+Display:    unavailable during headless validation; GUI benchmark runs require a live X11/Wayland session
 ```
 
 ### Aplicação de Referência
@@ -36,6 +36,29 @@ Display:    [verificar saída de xrandr]
 qpdfview:   /usr/sbin/qpdfview
 Status:     Instalado (versão não detectada via --version)
 ```
+
+### Baseline capturada no ambiente atual
+
+Os valores abaixo foram registrados em execuções anteriores do ambiente de referência e são conservados como baseline para comparação com o protótipo em um desktop gráfico ativo.
+
+| Documento | Tempo médio | RSS médio | Observação |
+|---|---:|---:|---|
+| small.pdf | 329 ms | 116.6 MB | abertura rápida e estável |
+| medium.pdf | 329 ms | 116.5 MB | ponto de referência para navegação moderada |
+| medium-long.pdf | 333 ms | 113.2 MB | documento extenso em execução estável |
+
+### Resultado do protótipo em smoke-test
+
+A validação executada nesta sessão usou o binário de desenvolvimento em um ambiente sem servidor gráfico ativo. O objetivo foi confirmar que o aplicativo permanece vivo ao abrir um PDF em execução limitada.
+
+| Documento | Tempo de startup | RSS | Status |
+|---|---:|---:|---|
+| small.pdf | 1005 ms | 2.34 MB | iniciado e mantido vivo durante timeout |
+| medium.pdf | 1006 ms | 2.34 MB | iniciado e mantido vivo durante timeout |
+| medium-long.pdf | 1006 ms | 2.34 MB | iniciado e mantido vivo durante timeout |
+| large-long.pdf | 1005 ms | 2.34 MB | iniciado e mantido vivo durante timeout |
+
+> Observação: estas métricas são smoke-test de inicialização e não substituem a medição comparativa completa em um desktop real com X11/Wayland e renderização visível.
 
 ---
 
@@ -227,7 +250,9 @@ perf record -g qpdfview tests/fixtures/small.pdf
 perf report
 ```
 
-### Benchmark no protótipo (será adicionado após Etapa 2)
+### Benchmark no protótipo
 ```bash
-# cargo run --release --bin gpdfview -- tests/fixtures/small.pdf
+./scripts/benchmark.sh tests/fixtures/small.pdf tests/fixtures/medium.pdf tests/fixtures/medium-long.pdf tests/fixtures/large-long.pdf
 ```
+
+Este script inicia o binário em um ambiente gráfico ativo, mede a janela de startup e grava um TSV em `measurements/gpdfview_benchmark.tsv`.

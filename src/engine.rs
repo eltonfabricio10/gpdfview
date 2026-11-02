@@ -15,6 +15,7 @@ pub struct RenderRequest {
     pub path: PathBuf,
     pub page_index: i32,
     pub scale: f64,
+    pub rotation: i32,
     pub generation: u64,
     pub prefetch: bool,
 }
@@ -24,6 +25,7 @@ pub struct RenderedPage {
     pub generation: u64,
     pub path: PathBuf,
     pub scale: f64,
+    pub rotation: i32,
     pub prefetch: bool,
     pub page_index: i32,
     pub page_count: i32,
@@ -45,6 +47,41 @@ pub struct RenderError {
 pub enum RenderResult {
     Page(RenderedPage),
     Error(RenderError),
+}
+
+#[allow(dead_code)]
+pub fn find_text_in_page(path: &PathBuf, page_index: i32, query: &str) -> Result<usize, String> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return Ok(0);
+    }
+
+    let document = load_document(path)?;
+    let page = document
+        .page(page_index)
+        .ok_or_else(|| format!("Page {} does not exist", page_index + 1))?;
+    Ok(page.find_text(trimmed).len())
+}
+
+pub fn find_text_rectangles_in_page(
+    path: &PathBuf,
+    page_index: i32,
+    query: &str,
+) -> Result<Vec<(f64, f64, f64, f64)>, String> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let document = load_document(path)?;
+    let page = document
+        .page(page_index)
+        .ok_or_else(|| format!("Page {} does not exist", page_index + 1))?;
+    Ok(page
+        .find_text(trimmed)
+        .into_iter()
+        .map(|rect| (rect.x1(), rect.y1(), rect.x2(), rect.y2()))
+        .collect())
 }
 
 #[derive(Default)]
@@ -87,7 +124,7 @@ impl PdfRenderer {
         generation
     }
 
-    pub fn request(&self, path: PathBuf, page_index: i32, scale: f64) -> u64 {
+    pub fn request(&self, path: PathBuf, page_index: i32, scale: f64, rotation: i32) -> u64 {
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
         let request = RenderRequest {
             path,
@@ -97,6 +134,7 @@ impl PdfRenderer {
             } else {
                 1.0
             },
+            rotation: normalize_rotation(rotation),
             generation,
             prefetch: false,
         };
@@ -108,12 +146,20 @@ impl PdfRenderer {
         generation
     }
 
-    pub fn prefetch(&self, path: PathBuf, page_indices: &[i32], scale: f64, generation: u64) {
+    pub fn prefetch(
+        &self,
+        path: PathBuf,
+        page_indices: &[i32],
+        scale: f64,
+        generation: u64,
+        rotation: i32,
+    ) {
         let scale = if scale.is_finite() {
             scale.clamp(0.1, RENDER_SCALE_LIMIT)
         } else {
             1.0
         };
+        let rotation = normalize_rotation(rotation);
         let (lock, wake) = &*self.pending;
         let mut state = lock.lock().expect("renderer request lock poisoned");
         state
@@ -121,7 +167,10 @@ impl PdfRenderer {
             .retain(|request| request.generation == generation);
         for &page_index in page_indices {
             if state.prefetches.iter().any(|request| {
-                request.path == path && request.page_index == page_index && request.scale == scale
+                request.path == path
+                    && request.page_index == page_index
+                    && request.scale == scale
+                    && request.rotation == rotation
             }) {
                 continue;
             }
@@ -129,6 +178,7 @@ impl PdfRenderer {
                 path: path.clone(),
                 page_index,
                 scale,
+                rotation,
                 generation,
                 prefetch: true,
             });
@@ -237,6 +287,18 @@ fn load_document(path: &PathBuf) -> Result<Document, String> {
     Document::from_file(&file.uri(), None).map_err(|error| error.to_string())
 }
 
+fn normalize_rotation(rotation: i32) -> i32 {
+    let normalized = rotation.rem_euclid(360);
+    if normalized == 360 { 0 } else { normalized }
+}
+
+fn rotated_page_dimensions(width_points: f64, height_points: f64, rotation: i32) -> (f64, f64) {
+    match normalize_rotation(rotation) {
+        90 | 270 => (height_points, width_points),
+        _ => (width_points, height_points),
+    }
+}
+
 fn render_page(document: &Document, request: &RenderRequest) -> Result<RenderedPage, String> {
     let _guard = crate::poppler_lock::lock()?;
     let page_count = document.n_pages();
@@ -247,12 +309,15 @@ fn render_page(document: &Document, request: &RenderRequest) -> Result<RenderedP
         .page(request.page_index)
         .ok_or_else(|| format!("Page {} does not exist", request.page_index + 1))?;
     let (page_width_points, page_height_points) = page.size();
+    let (rotated_width, rotated_height) = rotated_page_dimensions(page_width_points, page_height_points, request.rotation);
     render_to_pixels(
         &page,
         request,
         page_count,
         page_width_points,
         page_height_points,
+        rotated_width,
+        rotated_height,
     )
 }
 
@@ -262,9 +327,11 @@ fn render_to_pixels(
     page_count: i32,
     page_width_points: f64,
     page_height_points: f64,
+    rotated_width: f64,
+    rotated_height: f64,
 ) -> Result<RenderedPage, String> {
-    let width = (page_width_points * request.scale).ceil() as i32;
-    let height = (page_height_points * request.scale).ceil() as i32;
+    let width = (rotated_width * request.scale).ceil() as i32;
+    let height = (rotated_height * request.scale).ceil() as i32;
     if width <= 0 || height <= 0 {
         return Err("PDF page has invalid dimensions".into());
     }
@@ -278,6 +345,10 @@ fn render_to_pixels(
     let mut surface =
         ImageSurface::create(Format::ARgb32, width, height).map_err(|error| error.to_string())?;
     let context = Context::new(&surface).map_err(|error| error.to_string())?;
+    let angle = request.rotation as f64 * std::f64::consts::PI / 180.0;
+    context.translate(width as f64 / 2.0, height as f64 / 2.0);
+    context.rotate(angle);
+    context.translate(-page_width_points * request.scale / 2.0, -page_height_points * request.scale / 2.0);
     context.scale(request.scale, request.scale);
     page.render(&context);
     surface.flush();
@@ -290,11 +361,12 @@ fn render_to_pixels(
         generation: request.generation,
         path: request.path.clone(),
         scale: request.scale,
+        rotation: request.rotation,
         prefetch: request.prefetch,
         page_index: request.page_index,
         page_count,
-        page_width_points,
-        page_height_points,
+        page_width_points: rotated_width,
+        page_height_points: rotated_height,
         width,
         height,
         stride,
@@ -370,10 +442,17 @@ mod tests {
     }
 
     #[test]
+    fn finds_text_matches_on_a_pdf_page() {
+        let fixture = PdfFixture::two_page();
+        let matches = super::find_text_in_page(&fixture.0, 0, "First").expect("search should work");
+        assert!(matches > 0, "expected at least one match for 'First'");
+    }
+
+    #[test]
     fn loads_and_renders_a_pdf_page_on_the_worker() {
         let fixture = PdfFixture::two_page();
         let renderer = PdfRenderer::new().expect("start worker");
-        let generation = renderer.request(fixture.0.clone(), 0, 0.5);
+        let generation = renderer.request(fixture.0.clone(), 0, 0.5, 0);
         let deadline = Instant::now() + Duration::from_secs(5);
 
         loop {
@@ -400,7 +479,7 @@ mod tests {
     fn reports_invalid_page_requests_without_panicking() {
         let fixture = PdfFixture::two_page();
         let renderer = PdfRenderer::new().expect("start worker");
-        let generation = renderer.request(fixture.0.clone(), 99, 1.0);
+        let generation = renderer.request(fixture.0.clone(), 99, 1.0, 0);
         let deadline = Instant::now() + Duration::from_secs(5);
 
         loop {
@@ -423,7 +502,7 @@ mod tests {
     fn prefetches_an_adjacent_page_without_advancing_the_visible_generation() {
         let fixture = PdfFixture::two_page();
         let renderer = PdfRenderer::new().expect("start worker");
-        let generation = renderer.request(fixture.0.clone(), 0, 0.5);
+        let generation = renderer.request(fixture.0.clone(), 0, 0.5, 0);
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut visible_page_received = false;
 
@@ -439,7 +518,7 @@ mod tests {
         }
         assert!(visible_page_received, "visible page did not render");
 
-        renderer.prefetch(fixture.0.clone(), &[1], 0.5, generation);
+        renderer.prefetch(fixture.0.clone(), &[1], 0.5, generation, 0);
         let mut prefetched_page_received = false;
         while Instant::now() < deadline {
             match renderer.try_recv() {
@@ -460,9 +539,9 @@ mod tests {
     fn coalesces_rapid_navigation_to_the_latest_page_request() {
         let fixture = PdfFixture::two_page();
         let renderer = PdfRenderer::new().expect("start worker");
-        renderer.request(fixture.0.clone(), 0, 0.5);
-        renderer.request(fixture.0.clone(), 1, 0.5);
-        let latest_generation = renderer.request(fixture.0.clone(), 0, 0.5);
+        renderer.request(fixture.0.clone(), 0, 0.5, 0);
+        renderer.request(fixture.0.clone(), 1, 0.5, 0);
+        let latest_generation = renderer.request(fixture.0.clone(), 0, 0.5, 0);
         let deadline = Instant::now() + Duration::from_secs(5);
 
         while Instant::now() < deadline {
@@ -484,7 +563,7 @@ mod tests {
     fn rejects_a_page_that_exceeds_the_render_memory_limit() {
         let fixture = PdfFixture::large_page();
         let renderer = PdfRenderer::new().expect("start worker");
-        let generation = renderer.request(fixture.0.clone(), 0, 4.0);
+        let generation = renderer.request(fixture.0.clone(), 0, 4.0, 0);
         let deadline = Instant::now() + Duration::from_secs(5);
 
         while Instant::now() < deadline {
@@ -506,7 +585,7 @@ mod tests {
     fn reports_an_invalid_pdf_as_a_render_error() {
         let fixture = PdfFixture::invalid();
         let renderer = PdfRenderer::new().expect("start worker");
-        let generation = renderer.request(fixture.0.clone(), 0, 1.0);
+        let generation = renderer.request(fixture.0.clone(), 0, 1.0, 0);
         let deadline = Instant::now() + Duration::from_secs(5);
 
         while Instant::now() < deadline {
