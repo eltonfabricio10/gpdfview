@@ -18,7 +18,7 @@ use crate::layout::cairo_search_highlight_rects;
 use crate::printing::PrintService;
 use crate::session::{
     last_directory_for_home_path, last_window_geometry_for_home_path, load_recent_documents,
-    newest_valid_recent_document, remember_window_geometry,
+    newest_valid_recent_document, remember_window_geometry, toggle_favorite_document,
 };
 use crate::sidebar::build_sidebar;
 use crate::ui_helpers::action_button;
@@ -59,6 +59,32 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     }
 
     let shell = gtk::Box::new(gtk::Orientation::Vertical, 0);
+
+    let menu_bar = gtk::Box::new(gtk::Orientation::Horizontal, 2);
+    menu_bar.set_margin_start(8);
+    menu_bar.set_margin_end(8);
+    menu_bar.set_margin_top(4);
+    menu_bar.set_margin_bottom(4);
+    let menu_file = gtk::Button::with_label("Arquivo");
+    menu_file.set_has_frame(false);
+    let menu_edit = gtk::Button::with_label("Editar");
+    menu_edit.set_has_frame(false);
+    let menu_view = gtk::Button::with_label("Exibir");
+    menu_view.set_has_frame(false);
+    let menu_tabs = gtk::Button::with_label("Abas");
+    menu_tabs.set_has_frame(false);
+    let menu_bookmarks = gtk::Button::with_label("Marcadores");
+    menu_bookmarks.set_has_frame(false);
+    let menu_help = gtk::Button::with_label("Ajuda");
+    menu_help.set_has_frame(false);
+    menu_bar.append(&menu_file);
+    menu_bar.append(&menu_edit);
+    menu_bar.append(&menu_view);
+    menu_bar.append(&menu_tabs);
+    menu_bar.append(&menu_bookmarks);
+    menu_bar.append(&menu_help);
+    shell.append(&menu_bar);
+
     let header = gtk::HeaderBar::new();
     let title = gtk::Label::new(Some("gpdfview"));
     header.set_title_widget(Some(&title));
@@ -126,6 +152,58 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         let visible = sidebar_toggle.is_visible();
         sidebar_toggle.set_visible(!visible);
     });
+
+    let menu_open_controller = open_controller.clone();
+    let menu_open_tab_manager = open_tab_manager.clone();
+    let menu_open_app = open_app.clone();
+    let menu_open_window = open_window.clone();
+    let menu_last_directory = last_directory.clone();
+    menu_file.connect_clicked(move |_| {
+        show_open_dialog(
+            menu_open_app.clone(),
+            menu_open_window.clone(),
+            menu_open_tab_manager.clone(),
+            menu_open_controller.clone(),
+            menu_last_directory.clone(),
+        );
+    });
+
+    let menu_print_controller = initial.clone();
+    menu_tabs.connect_clicked(move |_| {
+        menu_print_controller.status.set_text("Use o botão Abrir para criar uma nova aba com outro documento.");
+    });
+
+    let menu_search_controller = initial.clone();
+    menu_edit.connect_clicked(move |_| {
+        menu_search_controller.search_entry.grab_focus();
+        menu_search_controller.search_entry.select_region(0, -1);
+    });
+
+    let menu_sidebar = sidebar.clone();
+    menu_view.connect_clicked(move |_| {
+        menu_sidebar.set_visible(!menu_sidebar.is_visible());
+    });
+
+    let menu_favorite_controller = initial.clone();
+    menu_bookmarks.connect_clicked(move |_| {
+        let path = menu_favorite_controller.state.borrow().path.clone();
+        if let Some(path) = path {
+            let enabled = toggle_favorite_document(&path);
+            if enabled {
+                menu_favorite_controller.status.set_text("Documento adicionado aos favoritos.");
+            } else {
+                menu_favorite_controller.status.set_text("Documento removido dos favoritos.");
+            }
+        } else {
+            menu_favorite_controller.status.set_text("Abra um documento para favoritar.");
+        }
+    });
+
+    let menu_about_controller = initial.clone();
+    menu_help.connect_clicked(move |_| {
+        menu_about_controller.status.set_text("gpdfview: visualizador PDF em Rust + GTK4 inspirado no qpdfview.");
+    });
+
     let fullscreen_window = open_window.clone();
     fullscreen_button.connect_clicked(move |_| {
         if fullscreen_window.is_fullscreen() {
