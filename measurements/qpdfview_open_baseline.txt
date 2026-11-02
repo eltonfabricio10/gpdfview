@@ -1,0 +1,12 @@
+=== small.pdf ===
+bash: /usr/bin/time: Arquivo ou diretório inexistente
+bash: /usr/bin/time: Arquivo ou diretório inexistente
+bash: /usr/bin/time: Arquivo ou diretório inexistente
+=== medium.pdf ===
+bash: /usr/bin/time: Arquivo ou diretório inexistente
+bash: /usr/bin/time: Arquivo ou diretório inexistente
+bash: /usr/bin/time: Arquivo ou diretório inexistente
+=== medium-long.pdf ===
+bash: /usr/bin/time: Arquivo ou diretório inexistente
+bash: /usr/bin/time: Arquivo ou diretório inexistente
+bash: /usr/bin/time: Arquivo ou diretório inexistente

@@ -1,0 +1,22 @@
+=== Measuring medium.pdf ===
+Iteration 1:
+  Memory (RSS): 116212 KB
+  Wall time: 326 ms
+Iteration 2:
+  Memory (RSS): 116816 KB
+  Wall time: 327 ms
+Iteration 3:
+  Memory (RSS): 116560 KB
+  Wall time: 334 ms
+
+=== Measuring medium-long.pdf ===
+Iteration 1:
+  Memory (RSS): 113548 KB
+  Wall time: 336 ms
+Iteration 2:
+  Memory (RSS): 113176 KB
+  Wall time: 332 ms
+Iteration 3:
+  Memory (RSS): 113048 KB
+  Wall time: 330 ms
+

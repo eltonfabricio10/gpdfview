@@ -1,0 +1,76 @@
+{
+  "benchmark_name": "open_first_page",
+  "reference_app": "qpdfview",
+  "timestamp": "2026-11-02T15:00:00Z",
+  "environment": {
+    "gtk4": "4.22.5",
+    "poppler_glib": "26.08.0",
+    "libadwaita": "1.9.4",
+    "cairo": "1.18.6",
+    "rust": "1.99.0",
+    "hostname": "elton-inspiron5481",
+    "cpu_cores": 8,
+    "ram_gb": 15,
+    "kernel": "6.12.112-1-MANJARO",
+    "desktop": "KDE"
+  },
+  "measurements": [
+    {
+      "document": "small.pdf",
+      "iterations": [
+        {"iteration": 1, "wall_time_ms": 327, "memory_rss_mb": 120.7},
+        {"iteration": 2, "wall_time_ms": 329, "memory_rss_mb": 116.8},
+        {"iteration": 3, "wall_time_ms": 331, "memory_rss_mb": 112.2}
+      ],
+      "summary": {
+        "mean_time_ms": 329,
+        "stddev_time_ms": 2,
+        "mean_memory_mb": 116.6,
+        "min_memory_mb": 112.2,
+        "max_memory_mb": 120.7
+      }
+    },
+    {
+      "document": "medium.pdf",
+      "iterations": [
+        {"iteration": 1, "wall_time_ms": 326, "memory_rss_mb": 116.2},
+        {"iteration": 2, "wall_time_ms": 327, "memory_rss_mb": 116.8},
+        {"iteration": 3, "wall_time_ms": 334, "memory_rss_mb": 116.6}
+      ],
+      "summary": {
+        "mean_time_ms": 329,
+        "stddev_time_ms": 4.2,
+        "mean_memory_mb": 116.5,
+        "min_memory_mb": 116.2,
+        "max_memory_mb": 116.8
+      }
+    },
+    {
+      "document": "medium-long.pdf",
+      "iterations": [
+        {"iteration": 1, "wall_time_ms": 336, "memory_rss_mb": 113.5},
+        {"iteration": 2, "wall_time_ms": 332, "memory_rss_mb": 113.2},
+        {"iteration": 3, "wall_time_ms": 330, "memory_rss_mb": 113.0}
+      ],
+      "summary": {
+        "mean_time_ms": 333,
+        "stddev_time_ms": 3,
+        "mean_memory_mb": 113.2,
+        "min_memory_mb": 113.0,
+        "max_memory_mb": 113.5
+      }
+    }
+  ],
+  "aggregate_summary": {
+    "all_docs_mean_time_ms": 330,
+    "all_docs_stddev_time_ms": 3.5,
+    "all_docs_mean_memory_mb": 115.1,
+    "observations": [
+      "qpdfview abre PDFs pequenos a médios consistentemente em ~330ms",
+      "Memória estabiliza em ~113-117 MB para esses tamanhos",
+      "Pouca variação entre tamanhos de arquivo (71KB a 430KB)",
+      "RSS cai ligeiramente entre iterações (cold start vs. warm cache filesystem)"
+    ]
+  },
+  "notes": "Medições feitas com qpdfview instanciado, aberto por 0.3s e termina via kill. Captura time até início da renderização da primeira página + overhead GTK. Memória(RSS) reflecte estado em t=0.3s."
+}
