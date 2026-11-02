@@ -462,45 +462,50 @@ impl ViewerController {
         self.renderer.prefetch(path, &pages, scale, generation, rotation);
     }
 
+    fn show_status(&self, message: &str) {
+        self.status.set_text(message);
+    }
+
+    fn show_document_properties_dialog(&self, properties: &str) {
+        let dialog = gtk::Window::new();
+        dialog.set_title(Some("Document properties"));
+        dialog.set_transient_for(Some(&self.window));
+        dialog.set_modal(true);
+        dialog.set_default_size(420, 220);
+
+        let content = gtk::Box::new(gtk::Orientation::Vertical, 8);
+        content.set_margin_top(12);
+        content.set_margin_start(12);
+        content.set_margin_end(12);
+        content.set_margin_bottom(12);
+
+        let label = gtk::Label::new(Some(properties));
+        label.set_xalign(0.0);
+        label.set_yalign(0.0);
+        label.set_wrap(true);
+        label.set_selectable(true);
+        content.append(&label);
+
+        let close_button = gtk::Button::with_label("Close");
+        let dialog_for_close = dialog.clone();
+        close_button.connect_clicked(move |_| {
+            dialog_for_close.close();
+        });
+        content.append(&close_button);
+        dialog.set_child(Some(&content));
+        dialog.present();
+    }
+
     fn show_document_properties(&self) {
         let Some(path) = self.state.borrow().path.clone() else {
-            self.status.set_text("Open a PDF document before viewing its properties.");
+            self.show_status("Open a PDF document before viewing its properties.");
             return;
         };
 
         match crate::engine::document_properties(&path) {
-            Ok(properties) => {
-                let dialog = gtk::Window::new();
-                dialog.set_title(Some("Document properties"));
-                dialog.set_transient_for(Some(&self.window));
-                dialog.set_modal(true);
-                dialog.set_default_size(420, 220);
-
-                let content = gtk::Box::new(gtk::Orientation::Vertical, 8);
-                content.set_margin_top(12);
-                content.set_margin_start(12);
-                content.set_margin_end(12);
-                content.set_margin_bottom(12);
-
-                let label = gtk::Label::new(Some(&properties));
-                label.set_xalign(0.0);
-                label.set_yalign(0.0);
-                label.set_wrap(true);
-                label.set_selectable(true);
-                content.append(&label);
-
-                let close_button = gtk::Button::with_label("Close");
-                let dialog_for_close = dialog.clone();
-                close_button.connect_clicked(move |_| {
-                    dialog_for_close.close();
-                });
-                content.append(&close_button);
-                dialog.set_child(Some(&content));
-                dialog.present();
-            }
+            Ok(properties) => self.show_document_properties_dialog(&properties),
             Err(error) => {
-                self.status
-                    .set_text(&format!("Could not read PDF properties: {error}"));
+                self.show_status(&format!("Could not read PDF properties: {error}"));
             }
         }
     }
