@@ -74,6 +74,48 @@ pub fn document_outline(path: &PathBuf) -> Result<Vec<OutlineEntry>, String> {
     Ok(entries)
 }
 
+pub fn render_page_thumbnail(
+    path: &PathBuf,
+    page_index: i32,
+    rotation: i32,
+    max_edge_px: i32,
+) -> Result<ImageSurface, String> {
+    let document = load_document(path)?;
+    let _guard = crate::poppler_lock::lock()?;
+    let page_count = document.n_pages();
+    if page_index < 0 || page_index >= page_count {
+        return Err(format!("Page {} does not exist", page_index + 1));
+    }
+    let page = document
+        .page(page_index)
+        .ok_or_else(|| format!("Page {} does not exist", page_index + 1))?;
+    let (page_width_points, page_height_points) = page.size();
+    let rotation = normalize_rotation(rotation);
+    let (rotated_width, rotated_height) =
+        rotated_page_dimensions(page_width_points, page_height_points, rotation);
+
+    let max_edge = f64::from(max_edge_px.max(16));
+    let scale = (max_edge / rotated_width.max(rotated_height)).clamp(0.05, 1.0);
+    let width = (rotated_width * scale).ceil() as i32;
+    let height = (rotated_height * scale).ceil() as i32;
+    if width <= 0 || height <= 0 {
+        return Err("PDF page has invalid dimensions".into());
+    }
+
+    let surface = ImageSurface::create(Format::ARgb32, width, height)
+        .map_err(|error| error.to_string())?;
+    let context = Context::new(&surface).map_err(|error| error.to_string())?;
+    let angle = rotation as f64 * std::f64::consts::PI / 180.0;
+    context.translate(width as f64 / 2.0, height as f64 / 2.0);
+    context.rotate(angle);
+    context.translate(-page_width_points * scale / 2.0, -page_height_points * scale / 2.0);
+    context.scale(scale, scale);
+    page.render(&context);
+    surface.flush();
+
+    Ok(surface)
+}
+
 unsafe fn collect_outline_entries(
     iter: *mut poppler::ffi::PopplerIndexIter,
     depth: u32,
@@ -597,6 +639,16 @@ mod tests {
         let fixture = PdfFixture::two_page();
         let matches = super::find_text_in_page(&fixture.0, 0, "First").expect("search should work");
         assert!(matches > 0, "expected at least one match for 'First'");
+    }
+
+    #[test]
+    fn thumbnail_render_returns_a_small_surface() {
+        let fixture = PdfFixture::two_page();
+        let surface = super::render_page_thumbnail(&fixture.0, 0, 0, 120)
+            .expect("thumbnail render should succeed");
+        assert!(surface.width() > 0);
+        assert!(surface.height() > 0);
+        assert!(surface.width().max(surface.height()) <= 120);
     }
 
     #[test]

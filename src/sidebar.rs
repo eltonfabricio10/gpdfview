@@ -5,11 +5,16 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use crate::app::ViewerController;
+use crate::cache::LruCache;
 use crate::document_actions::open_document_in_new_tab;
 use crate::document_tabs::DocumentTabManager;
 use crate::session::{
     is_favorite_document, load_favorite_documents, load_recent_documents, toggle_favorite_document,
 };
+use crate::viewer_state::RenderKey;
+
+const THUMBNAIL_MAX_EDGE: i32 = 120;
+const THUMBNAIL_CACHE_BYTES: usize = 24 * 1024 * 1024;
 
 #[derive(Clone)]
 struct SidebarOpenContext {
@@ -88,6 +93,79 @@ fn append_sidebar_entry(
     });
 
     list.append(&row);
+}
+
+fn thumbnail_surface_for_page(
+    controller: &ViewerController,
+    thumbnail_cache: &Rc<RefCell<LruCache<RenderKey, gtk4::cairo::ImageSurface>>>,
+    page_index: i32,
+) -> Option<gtk4::cairo::ImageSurface> {
+    let state = controller.state.borrow();
+    let path = state.path.clone()?;
+    let scale = f64::from(THUMBNAIL_MAX_EDGE) / 1000.0;
+    let rotation = state.rotation;
+    let key = RenderKey::new(path.clone(), page_index, scale, rotation);
+    drop(state);
+
+    if let Some(cached) = thumbnail_cache.borrow_mut().get(&key).cloned() {
+        return Some(cached);
+    }
+
+    let rendered = crate::engine::render_page_thumbnail(&path, page_index, rotation, THUMBNAIL_MAX_EDGE).ok()?;
+    let bytes = rendered
+        .stride()
+        .max(0)
+        .saturating_mul(rendered.height().max(0)) as usize;
+    thumbnail_cache
+        .borrow_mut()
+        .insert(key, rendered.clone(), bytes);
+    Some(rendered)
+}
+
+fn build_page_thumbnail_button(
+    controller: &ViewerController,
+    thumbnail_cache: &Rc<RefCell<LruCache<RenderKey, gtk4::cairo::ImageSurface>>>,
+    page_index: i32,
+    is_current: bool,
+) -> gtk4::Button {
+    let page_button = gtk4::Button::new();
+    page_button.set_tooltip_text(Some(&format!("Go to page {}", page_index + 1)));
+
+    let content = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+    content.set_margin_start(4);
+    content.set_margin_end(4);
+    content.set_margin_top(4);
+    content.set_margin_bottom(4);
+
+    if let Some(surface) = thumbnail_surface_for_page(controller, thumbnail_cache, page_index) {
+        let preview = gtk4::DrawingArea::new();
+        preview.set_content_width(surface.width());
+        preview.set_content_height(surface.height());
+        preview.set_size_request(surface.width(), surface.height());
+        let thumbnail = surface.clone();
+        preview.set_draw_func(move |_, context, _, _| {
+            if context.set_source_surface(&thumbnail, 0.0, 0.0).is_ok() {
+                let _ = context.paint();
+            }
+        });
+        content.append(&preview);
+    }
+
+    let label = gtk4::Label::new(Some(&format!("{}", page_index + 1)));
+    content.append(&label);
+    page_button.set_child(Some(&content));
+
+    if is_current {
+        page_button.add_css_class("suggested-action");
+    }
+
+    let page_to_open = page_index;
+    let page_controller = controller.clone();
+    page_button.connect_clicked(move |_| {
+        page_controller.navigate_to(page_to_open);
+    });
+
+    page_button
 }
 
 fn populate_outline_list(list: &gtk4::ListBox, controller: &ViewerController) {
@@ -188,19 +266,15 @@ pub fn build_sidebar(
     pages_flow.set_max_children_per_line(2);
     pages_flow.set_selection_mode(gtk4::SelectionMode::None);
     pages_flow.set_homogeneous(true);
+    let thumbnail_cache = Rc::new(RefCell::new(LruCache::new(THUMBNAIL_CACHE_BYTES)));
     let state = controller.state.borrow();
     for page_index in page_range_for_sidebar(state.page_count, state.page_index) {
-        let page_button = gtk4::Button::with_label(&format!("{}", page_index + 1));
-        page_button.set_tooltip_text(Some(&format!("Go to page {}", page_index + 1)));
-        page_button.set_size_request(56, 34);
-        if page_index == state.page_index {
-            page_button.add_css_class("suggested-action");
-        }
-        let page_to_open = page_index;
-        let page_controller = controller.clone();
-        page_button.connect_clicked(move |_| {
-            page_controller.navigate_to(page_to_open);
-        });
+        let page_button = build_page_thumbnail_button(
+            &controller,
+            &thumbnail_cache,
+            page_index,
+            page_index == state.page_index,
+        );
         pages_flow.append(&page_button);
     }
     drop(state);
