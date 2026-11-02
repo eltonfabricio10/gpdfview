@@ -1,11 +1,15 @@
 use gtk4::prelude::*;
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 #[derive(Clone)]
 pub struct DocumentTabManager {
     notebook: Option<gtk4::Notebook>,
     titles: Rc<RefCell<Vec<String>>>,
+    paths: Rc<RefCell<Vec<Option<PathBuf>>>>,
+    recently_closed_titles: Rc<RefCell<Vec<String>>>,
+    recently_closed_paths: Rc<RefCell<Vec<Option<PathBuf>>>>,
 }
 
 pub fn should_show_tabs(page_count: u32) -> bool {
@@ -17,6 +21,9 @@ impl DocumentTabManager {
         Self {
             notebook: Some(notebook),
             titles: Rc::new(RefCell::new(Vec::new())),
+            paths: Rc::new(RefCell::new(Vec::new())),
+            recently_closed_titles: Rc::new(RefCell::new(Vec::new())),
+            recently_closed_paths: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
@@ -25,12 +32,41 @@ impl DocumentTabManager {
         Self {
             notebook: None,
             titles: Rc::new(RefCell::new(Vec::new())),
+            paths: Rc::new(RefCell::new(Vec::new())),
+            recently_closed_titles: Rc::new(RefCell::new(Vec::new())),
+            recently_closed_paths: Rc::new(RefCell::new(Vec::new())),
         }
     }
 
     #[cfg(test)]
     pub fn record_tab(&self, title: &str) {
         self.titles.borrow_mut().push(title.to_string());
+        self.paths.borrow_mut().push(None);
+    }
+
+    #[cfg(test)]
+    pub fn close_last_recorded_tab(&self) -> Option<String> {
+        let mut titles = self.titles.borrow_mut();
+        let title = titles.pop()?;
+        self.paths.borrow_mut().pop();
+        self.recently_closed_titles.borrow_mut().push(title.clone());
+        Some(title)
+    }
+
+    #[cfg(test)]
+    pub fn recent_closed_count(&self) -> usize {
+        self.recently_closed_titles.borrow().len()
+    }
+
+    #[cfg(test)]
+    pub fn restore_last_closed_tab(&self) -> Option<String> {
+        let mut recent = self.recently_closed_titles.borrow_mut();
+        recent.pop()
+    }
+
+    pub fn restore_last_closed_path(&self) -> Option<PathBuf> {
+        let mut recent = self.recently_closed_paths.borrow_mut();
+        recent.pop().flatten()
     }
 
     pub fn close_tab(&self, page: &gtk4::Box) -> bool {
@@ -38,14 +74,30 @@ impl DocumentTabManager {
             return false;
         };
         if let Some(page_index) = notebook.page_num(page) {
-            notebook.remove_page(Some(page_index));
+            let page_index = page_index as usize;
+            let title = self.titles.borrow().get(page_index).cloned();
+            let path = self.paths.borrow().get(page_index).cloned().flatten();
+            if let Some(title) = title {
+                self.recently_closed_titles.borrow_mut().push(title);
+            }
+            if let Some(path) = path.clone() {
+                self.recently_closed_paths.borrow_mut().push(Some(path));
+            }
+            self.titles.borrow_mut().remove(page_index);
+            self.paths.borrow_mut().remove(page_index);
+            notebook.remove_page(Some(page_index as u32));
             notebook.set_show_tabs(should_show_tabs(notebook.n_pages()));
             return true;
         }
         false
     }
 
+    #[allow(dead_code)]
     pub fn add_tab(&self, page: &gtk4::Box, title: &str) {
+        self.add_tab_with_path(page, title, None);
+    }
+
+    pub fn add_tab_with_path(&self, page: &gtk4::Box, title: &str, path: Option<PathBuf>) {
         let label_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
         label_box.set_halign(gtk4::Align::Center);
         label_box.set_valign(gtk4::Align::Center);
@@ -83,6 +135,7 @@ impl DocumentTabManager {
             notebook.set_show_tabs(should_show_tabs(notebook.n_pages()));
         }
         self.titles.borrow_mut().push(title.to_string());
+        self.paths.borrow_mut().push(path);
     }
 
     #[cfg(test)]
@@ -124,5 +177,16 @@ mod tests {
         assert!(should_show_tabs(1));
         assert!(should_show_tabs(2));
         assert!(!should_show_tabs(0));
+    }
+
+    #[test]
+    fn document_tab_manager_tracks_recently_closed_tabs() {
+        let manager = DocumentTabManager::new_model();
+        manager.record_tab("Alpha");
+        manager.record_tab("Beta");
+
+        assert_eq!(manager.close_last_recorded_tab(), Some("Beta".to_string()));
+        assert_eq!(manager.recent_closed_count(), 1);
+        assert_eq!(manager.restore_last_closed_tab(), Some("Beta".to_string()));
     }
 }

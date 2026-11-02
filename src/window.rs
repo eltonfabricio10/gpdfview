@@ -11,7 +11,7 @@ use adw::prelude::*;
 
 use crate::app::ViewerController;
 use crate::cache::LruCache;
-use crate::document_actions::show_open_dialog;
+use crate::document_actions::{open_document_in_new_tab, show_open_dialog};
 use crate::document_tabs::DocumentTabManager;
 use crate::keyboard::{resolve_key_action, KeyAction};
 use crate::layout::cairo_search_highlight_rects;
@@ -245,6 +245,30 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     let menu_tabs_controller = initial.clone();
     let tabs_hint_item = append_menu_item(&tabs_menu_box, "Gerenciar abas", move || {
         dispatch_ui_command(&menu_tabs_controller, UiCommand::ShowTabsHint, None);
+    });
+    let restore_tab_controller = initial.clone();
+    let restore_tab_manager = tab_manager.clone();
+    let restore_tab_app = app.clone();
+    let restore_tab_window = window.clone();
+    let restore_tab_title = title.clone();
+    let restore_tab_button = print_button.clone();
+    let _restore_tab_item = append_menu_item(&tabs_menu_box, "Restaurar última aba", move || {
+        if let Some(path) = restore_tab_manager.borrow().restore_last_closed_path() {
+            if open_document_in_new_tab(
+                &restore_tab_app,
+                &restore_tab_window,
+                restore_tab_manager.clone(),
+                path,
+                restore_tab_title.clone(),
+                restore_tab_button.clone(),
+            )
+            .is_some()
+            {
+                restore_tab_controller.status.set_text("Última aba fechada restaurada.");
+            }
+        } else {
+            restore_tab_controller.status.set_text("Não há aba fechada para restaurar.");
+        }
     });
 
     let menu_favorite_controller = initial.clone();
