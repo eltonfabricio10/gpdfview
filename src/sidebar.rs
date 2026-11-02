@@ -3,6 +3,7 @@ use libadwaita as adw;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::time::Duration;
 
 use crate::app::ViewerController;
 use crate::cache::LruCache;
@@ -168,6 +169,40 @@ fn build_page_thumbnail_button(
     page_button
 }
 
+fn populate_pages_flow(
+    pages_flow: &gtk4::FlowBox,
+    controller: &ViewerController,
+    thumbnail_cache: &Rc<RefCell<LruCache<RenderKey, gtk4::cairo::ImageSurface>>>,
+) {
+    while let Some(child) = pages_flow.first_child() {
+        pages_flow.remove(&child);
+    }
+
+    let state = controller.state.borrow();
+    let visible_pages = page_range_for_sidebar(state.page_count, state.page_index);
+    if visible_pages.is_empty() {
+        let placeholder = gtk4::Label::new(Some("Loading page thumbnails…"));
+        placeholder.set_xalign(0.0);
+        placeholder.set_margin_start(8);
+        placeholder.set_margin_end(8);
+        placeholder.set_margin_top(4);
+        placeholder.set_margin_bottom(4);
+        pages_flow.insert(&placeholder, -1);
+        return;
+    }
+
+    for page_index in visible_pages {
+        let page_button = build_page_thumbnail_button(
+            controller,
+            thumbnail_cache,
+            page_index,
+            page_index == state.page_index,
+        );
+        page_button.set_size_request(90, -1);
+        pages_flow.insert(&page_button, -1);
+    }
+}
+
 fn populate_outline_list(list: &gtk4::ListBox, controller: &ViewerController) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
@@ -249,12 +284,21 @@ pub fn build_sidebar(
         print_button: print_button.clone(),
     };
 
-    let sidebar = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
-    sidebar.set_size_request(220, -1);
-    sidebar.set_margin_start(8);
-    sidebar.set_margin_end(8);
-    sidebar.set_margin_top(8);
-    sidebar.set_margin_bottom(8);
+    let sidebar_root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    sidebar_root.set_size_request(260, -1);
+
+    let sidebar_scrolled = gtk4::ScrolledWindow::new();
+    sidebar_scrolled.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
+    sidebar_scrolled.set_vexpand(true);
+    sidebar_scrolled.set_hexpand(false);
+
+    let sidebar = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
+    sidebar.set_margin_start(10);
+    sidebar.set_margin_end(10);
+    sidebar.set_margin_top(10);
+    sidebar.set_margin_bottom(10);
+    sidebar_scrolled.set_child(Some(&sidebar));
+    sidebar_root.append(&sidebar_scrolled);
 
     let pages_label = gtk4::Label::new(Some("Pages"));
     pages_label.set_halign(gtk4::Align::Start);
@@ -265,19 +309,11 @@ pub fn build_sidebar(
     pages_flow.set_min_children_per_line(2);
     pages_flow.set_max_children_per_line(2);
     pages_flow.set_selection_mode(gtk4::SelectionMode::None);
-    pages_flow.set_homogeneous(true);
+    pages_flow.set_homogeneous(false);
+    pages_flow.set_row_spacing(6);
+    pages_flow.set_column_spacing(6);
     let thumbnail_cache = Rc::new(RefCell::new(LruCache::new(THUMBNAIL_CACHE_BYTES)));
-    let state = controller.state.borrow();
-    for page_index in page_range_for_sidebar(state.page_count, state.page_index) {
-        let page_button = build_page_thumbnail_button(
-            &controller,
-            &thumbnail_cache,
-            page_index,
-            page_index == state.page_index,
-        );
-        pages_flow.append(&page_button);
-    }
-    drop(state);
+    populate_pages_flow(&pages_flow, &controller, &thumbnail_cache);
     sidebar.append(&pages_flow);
 
     let outline_header = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
@@ -294,6 +330,7 @@ pub fn build_sidebar(
 
     let outline_list = gtk4::ListBox::new();
     outline_list.set_selection_mode(gtk4::SelectionMode::None);
+    outline_list.set_css_classes(&["boxed-list"]);
     populate_outline_list(&outline_list, &controller);
     let outline_controller = controller.clone();
     let outline_list_for_refresh = outline_list.clone();
@@ -309,6 +346,7 @@ pub fn build_sidebar(
 
     let recent_list = gtk4::ListBox::new();
     recent_list.set_selection_mode(gtk4::SelectionMode::Single);
+    recent_list.set_css_classes(&["boxed-list"]);
     for path in load_recent_documents() {
         let label = path
             .file_name()
@@ -331,6 +369,7 @@ pub fn build_sidebar(
 
     let favorites_list = gtk4::ListBox::new();
     favorites_list.set_selection_mode(gtk4::SelectionMode::Single);
+    favorites_list.set_css_classes(&["boxed-list"]);
     for path in load_favorite_documents() {
         let label = path
             .file_name()
@@ -346,7 +385,34 @@ pub fn build_sidebar(
     }
     sidebar.append(&favorites_list);
 
-    sidebar
+    let state_signature = Rc::new(RefCell::new((None::<PathBuf>, -1, -1, 0)));
+    let watch_controller = controller.clone();
+    let watch_flow = pages_flow.clone();
+    let watch_outline = outline_list.clone();
+    let watch_cache = thumbnail_cache.clone();
+    let watch_signature = state_signature.clone();
+    gtk4::glib::timeout_add_local(Duration::from_millis(300), move || {
+        let snapshot = {
+            let state = watch_controller.state.borrow();
+            (
+                state.path.clone(),
+                state.page_index,
+                state.page_count,
+                state.rotation,
+            )
+        };
+        let previous = watch_signature.borrow().clone();
+        if snapshot != previous {
+            populate_pages_flow(&watch_flow, &watch_controller, &watch_cache);
+            if snapshot.0 != previous.0 {
+                populate_outline_list(&watch_outline, &watch_controller);
+            }
+            *watch_signature.borrow_mut() = snapshot;
+        }
+        gtk4::glib::ControlFlow::Continue
+    });
+
+    sidebar_root
 }
 
 #[cfg(test)]
