@@ -1,49 +1,44 @@
 use crate::cache::LruCache;
-use crate::document_tabs::DocumentTabManager;
-use crate::engine::{PdfRenderer, RenderError, RenderResult, RenderedPage};
+use crate::dialogs::build_document_properties_dialog;
+use crate::engine::{PdfRenderer, RenderError, RenderedPage};
+use crate::keyboard::KeyAction;
+use crate::navigation::{
+    change_zoom, fit_page, fit_width, handle_key_action, navigate_to, rotate_page,
+    toggle_presentation_mode,
+};
 use crate::printing::PrintService;
+use crate::rendering::{poll, present_page, request_render, schedule_prefetch, search_current_page};
+#[cfg(test)]
 use crate::session::{
-    is_favorite_document, last_directory_for_home, last_directory_for_home_path,
-    last_window_geometry_for_home, last_window_geometry_for_home_path, load_favorite_documents,
-    load_recent_documents, newest_valid_recent_document, normalize_recent_paths,
-    remember_last_directory, remember_last_directory_for_home, remember_recent_document,
-    remember_window_geometry, remember_window_geometry_for_home, toggle_favorite_document,
+    last_directory_for_home, last_window_geometry_for_home, newest_valid_recent_document,
+    normalize_recent_paths, remember_last_directory_for_home,
+    remember_window_geometry_for_home,
 };
-use crate::viewer_state::{
-    apply_render_request, normalize_rotation, sanitize_scale, RenderKey, ViewerState,
-    DEFAULT_ZOOM,
-};
+use crate::viewer_state::{RenderKey, ViewerState, DEFAULT_ZOOM};
+use crate::window::DocumentControllerParams;
 use libadwaita as adw;
 use adw::prelude::*;
 use gtk4 as gtk;
-use gtk4::cairo::{Format, ImageSurface};
-use gtk::{gio, glib};
+use gtk4::cairo::ImageSurface;
+use gtk::gio;
 use std::cell::{Cell, RefCell};
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::rc::Rc;
-use std::time::{Duration, Instant};
+
+#[cfg(test)]
+use std::fs;
+
+#[cfg(test)]
+use crate::keyboard::resolve_key_action;
+#[cfg(test)]
+use crate::layout::{
+    cairo_search_highlight_rects, compute_fit_page_scale, compute_fit_width_scale,
+};
+#[cfg(test)]
+use crate::viewer_state::{apply_render_request, normalize_rotation};
 
 
-const CACHE_LIMIT_BYTES: usize = 128 * 1024 * 1024;
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum KeyAction {
-    NextPage,
-    PreviousPage,
-    FirstPage,
-    LastPage,
-    ZoomIn,
-    ZoomOut,
-    FitWidth,
-    FitPage,
-    RotateLeft,
-    RotateRight,
-    OpenFile,
-    FocusSearch,
-    ToggleFullscreen,
-    TogglePresentation,
-}
+pub(crate) const CACHE_LIMIT_BYTES: usize = 128 * 1024 * 1024;
 
 #[cfg(test)]
 fn rotated_page_dimensions(width_points: f64, height_points: f64, rotation: i32) -> (f64, f64) {
@@ -53,156 +48,44 @@ fn rotated_page_dimensions(width_points: f64, height_points: f64, rotation: i32)
     }
 }
 
-fn resolve_key_action(key: &str, modifiers: u32) -> Option<KeyAction> {
-    let normalized = key.trim();
-    let lowered = normalized
-        .to_ascii_lowercase()
-        .replace('_', "")
-        .replace('-', "");
-    let has_ctrl = modifiers & gtk::gdk::ModifierType::CONTROL_MASK.bits() != 0;
-
-    if has_ctrl && lowered == "o" {
-        return Some(KeyAction::OpenFile);
-    }
-    if has_ctrl && lowered == "f" {
-        return Some(KeyAction::FocusSearch);
-    }
-    if lowered == "f11" {
-        return Some(KeyAction::ToggleFullscreen);
-    }
-    if lowered == "f5" {
-        return Some(KeyAction::TogglePresentation);
-    }
-
-    match lowered.as_str() {
-        "pagedown" | "space" | "right" | "j" => Some(KeyAction::NextPage),
-        "pageup" | "left" | "k" => Some(KeyAction::PreviousPage),
-        "home" => Some(KeyAction::FirstPage),
-        "end" => Some(KeyAction::LastPage),
-        "plus" | "equal" | "kpadd" => Some(KeyAction::ZoomIn),
-        "minus" | "kpsubtract" => Some(KeyAction::ZoomOut),
-        "f" => Some(KeyAction::FitWidth),
-        "g" => Some(KeyAction::FitPage),
-        "l" => Some(KeyAction::RotateLeft),
-        "r" => Some(KeyAction::RotateRight),
-        _ => None,
-    }
-}
-
-fn build_document_properties_dialog(parent: &impl IsA<gtk::Window>, properties: &str) -> gtk::Window {
-    let dialog = gtk::Window::new();
-    dialog.set_title(Some("Document properties"));
-    dialog.set_transient_for(Some(parent));
-    dialog.set_modal(true);
-    dialog.set_default_size(420, 220);
-
-    let content = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    content.set_margin_top(12);
-    content.set_margin_start(12);
-    content.set_margin_end(12);
-    content.set_margin_bottom(12);
-
-    let label = gtk::Label::new(Some(properties));
-    label.set_xalign(0.0);
-    label.set_yalign(0.0);
-    label.set_wrap(true);
-    label.set_selectable(true);
-    content.append(&label);
-
-    let close_button = gtk::Button::with_label("Close");
-    let dialog_for_close = dialog.clone();
-    close_button.connect_clicked(move |_| {
-        dialog_for_close.close();
-    });
-    content.append(&close_button);
-    dialog.set_child(Some(&content));
-    dialog
-}
-
 #[derive(Clone)]
-struct ViewerController {
-    renderer: Rc<PdfRenderer>,
-    printer: Rc<PrintService>,
-    state: Rc<RefCell<ViewerState>>,
-    cache: Rc<RefCell<LruCache<RenderKey, ImageSurface>>>,
-    surface: Rc<RefCell<Option<ImageSurface>>>,
-    area: gtk::DrawingArea,
-    scrolled: gtk::ScrolledWindow,
-    page_spin: gtk::SpinButton,
-    suppress_spin_events: Rc<Cell<bool>>,
-    page_total: gtk::Label,
-    zoom_label: gtk::Label,
-    search_entry: gtk::SearchEntry,
-    status: gtk::Label,
-    print_button: gtk::Button,
-    title: gtk::Label,
-    toolbar: gtk::Box,
-    window: adw::ApplicationWindow,
-    root: gtk::Box,
+pub(crate) struct ViewerController {
+    pub(crate) renderer: Rc<PdfRenderer>,
+    pub(crate) printer: Rc<PrintService>,
+    pub(crate) state: Rc<RefCell<ViewerState>>,
+    pub(crate) cache: Rc<RefCell<LruCache<RenderKey, ImageSurface>>>,
+    pub(crate) surface: Rc<RefCell<Option<ImageSurface>>>,
+    pub(crate) area: gtk::DrawingArea,
+    pub(crate) scrolled: gtk::ScrolledWindow,
+    pub(crate) page_spin: gtk::SpinButton,
+    pub(crate) suppress_spin_events: Rc<Cell<bool>>,
+    pub(crate) page_total: gtk::Label,
+    pub(crate) zoom_label: gtk::Label,
+    pub(crate) search_entry: gtk::SearchEntry,
+    pub(crate) status: gtk::Label,
+    pub(crate) print_button: gtk::Button,
+    pub(crate) title: gtk::Label,
+    pub(crate) toolbar: gtk::Box,
+    pub(crate) window: adw::ApplicationWindow,
+    pub(crate) root: gtk::Box,
 }
 
 impl ViewerController {
-    fn set_page_spin_value(&self, value: f64) {
+    pub(crate) fn set_page_spin_value(&self, value: f64) {
         self.suppress_spin_events.set(true);
         self.page_spin.set_value(value);
         self.suppress_spin_events.set(false);
     }
 
-    fn handle_key_action(&self, action: KeyAction) {
-        match action {
-            KeyAction::NextPage => {
-                let page = self.state.borrow().page_index + 1;
-                self.navigate_to(page);
-            }
-            KeyAction::PreviousPage => {
-                let page = self.state.borrow().page_index - 1;
-                self.navigate_to(page);
-            }
-            KeyAction::FirstPage => self.navigate_to(0),
-            KeyAction::LastPage => {
-                let page_count = self.state.borrow().page_count;
-                if page_count > 0 {
-                    self.navigate_to(page_count - 1);
-                }
-            }
-            KeyAction::ZoomIn => self.change_zoom(0.1),
-            KeyAction::ZoomOut => self.change_zoom(-0.1),
-            KeyAction::FitWidth => self.fit_width(),
-            KeyAction::FitPage => self.fit_page(),
-            KeyAction::RotateLeft => self.rotate_page(-90),
-            KeyAction::RotateRight => self.rotate_page(90),
-            KeyAction::OpenFile => {
-                self.status.set_text("Open a PDF document using the toolbar button or menu action.");
-            }
-            KeyAction::FocusSearch => {
-                self.search_entry.grab_focus();
-                self.search_entry.select_region(0, -1);
-            }
-            KeyAction::ToggleFullscreen => self.toggle_fullscreen(),
-            KeyAction::TogglePresentation => self.toggle_presentation_mode(),
-        }
+    pub(crate) fn handle_key_action(&self, action: KeyAction) {
+        handle_key_action(self, action);
     }
 
-    fn toggle_fullscreen(&self) {
-        if self.window.is_fullscreen() {
-            self.window.unfullscreen();
-        } else {
-            self.window.fullscreen();
-        }
+    pub(crate) fn toggle_presentation_mode(&self) {
+        toggle_presentation_mode(self);
     }
 
-    fn toggle_presentation_mode(&self) {
-        let is_visible = self.toolbar.is_visible();
-        self.toolbar.set_visible(!is_visible);
-        self.status.set_visible(!is_visible);
-        if is_visible {
-            self.window.fullscreen();
-        } else {
-            self.window.unfullscreen();
-        }
-    }
-
-    fn open_document(&self, path: PathBuf) {
+    pub(crate) fn open_document(&self, path: PathBuf) {
         self.cache.borrow_mut().clear();
         *self.surface.borrow_mut() = None;
         self.page_spin.set_sensitive(false);
@@ -226,283 +109,41 @@ impl ViewerController {
             state.scale = DEFAULT_ZOOM;
             state.rotation = 0;
             state.search_highlights.clear();
+            state.search_index = 0;
         }
         self.status.set_text("Loading first page…");
         self.request_render(path, 0, DEFAULT_ZOOM, 0);
     }
 
-    fn navigate_to(&self, page_index: i32) {
-        let (path, page_index, scale, rotation) = {
-            let mut state = self.state.borrow_mut();
-            if state.page_count == 0 {
-                return;
-            }
-            let path = state.path.clone();
-            let current_scale = state.scale;
-            let current_rotation = state.rotation;
-            let target = page_index.clamp(0, state.page_count - 1);
-            let render_context = apply_render_request(
-                &mut state,
-                path,
-                target,
-                current_scale,
-                current_rotation,
-            );
-            match render_context {
-                Some((path, page_index, scale, rotation)) => (path, page_index, scale, rotation),
-                None => return,
-            }
-        };
-        self.request_render(path, page_index, scale, rotation);
+    pub(crate) fn navigate_to(&self, page_index: i32) {
+        navigate_to(self, page_index);
     }
 
-    fn change_zoom(&self, delta: f64) {
-        let (path, page_index, scale, rotation) = {
-            let mut state = self.state.borrow_mut();
-            if state.page_count == 0 {
-                return;
-            }
-            let path = state.path.clone();
-            let current_page = state.page_index;
-            let current_rotation = state.rotation;
-            let next_scale = sanitize_scale(state.scale + delta);
-            let render_context = apply_render_request(
-                &mut state,
-                path,
-                current_page,
-                next_scale,
-                current_rotation,
-            );
-            match render_context {
-                Some((path, page_index, scale, rotation)) => (path, page_index, scale, rotation),
-                None => return,
-            }
-        };
-        self.request_render(path, page_index, scale, rotation);
+    pub(crate) fn change_zoom(&self, delta: f64) {
+        change_zoom(self, delta);
     }
 
-    fn rotate_page(&self, delta: i32) {
-        let (path, page_index, scale, rotation) = {
-            let mut state = self.state.borrow_mut();
-            let path = match state.path.clone() {
-                Some(path) => path,
-                None => return,
-            };
-            let current_page = state.page_index;
-            let current_scale = state.scale;
-            let current_rotation = state.rotation;
-            let render_context = apply_render_request(
-                &mut state,
-                Some(path),
-                current_page,
-                current_scale,
-                current_rotation + delta,
-            );
-            match render_context {
-                Some((path, page_index, scale, rotation)) => (path, page_index, scale, rotation),
-                None => return,
-            }
-        };
-        self.request_render(path, page_index, scale, rotation);
+    pub(crate) fn rotate_page(&self, delta: i32) {
+        rotate_page(self, delta);
     }
 
-    fn fit_width(&self) {
-        let width = self.scrolled.width().saturating_sub(32).max(1);
-        let (path, page_index, scale, rotation) = {
-            let mut state = self.state.borrow_mut();
-            if state.page_width_points <= 0.0 {
-                return;
-            }
-            let path = state.path.clone();
-            let current_page = state.page_index;
-            let current_rotation = state.rotation;
-            let next_scale = compute_fit_width_scale(state.page_width_points, width);
-            let render_context = apply_render_request(
-                &mut state,
-                path,
-                current_page,
-                next_scale,
-                current_rotation,
-            );
-            match render_context {
-                Some((path, page_index, scale, rotation)) => (path, page_index, scale, rotation),
-                None => return,
-            }
-        };
-        self.request_render(path, page_index, scale, rotation);
+    pub(crate) fn fit_width(&self) {
+        fit_width(self);
     }
 
-    fn fit_page(&self) {
-        let viewport_width = self.scrolled.width().saturating_sub(32).max(1);
-        let viewport_height = self.scrolled.height().saturating_sub(56).max(1);
-        let (path, page_index, scale, rotation) = {
-            let mut state = self.state.borrow_mut();
-            if state.page_width_points <= 0.0 || state.page_height_points <= 0.0 {
-                return;
-            }
-            let path = state.path.clone();
-            let current_page = state.page_index;
-            let current_rotation = state.rotation;
-            let next_scale = compute_fit_page_scale(
-                state.page_width_points,
-                state.page_height_points,
-                viewport_width,
-                viewport_height,
-            );
-            let render_context = apply_render_request(
-                &mut state,
-                path,
-                current_page,
-                next_scale,
-                current_rotation,
-            );
-            match render_context {
-                Some((path, page_index, scale, rotation)) => (path, page_index, scale, rotation),
-                None => return,
-            }
-        };
-        self.request_render(path, page_index, scale, rotation);
+    pub(crate) fn fit_page(&self) {
+        fit_page(self);
     }
 
-    fn request_render(&self, path: PathBuf, page_index: i32, scale: f64, rotation: i32) {
-        let (page_index, scale, rotation) = {
-            let mut state = self.state.borrow_mut();
-            let request_path = path.clone();
-            let requested_page = page_index;
-            let requested_scale = scale;
-            let requested_rotation = rotation;
-            let render_context = apply_render_request(
-                &mut state,
-                Some(request_path),
-                requested_page,
-                requested_scale,
-                requested_rotation,
-            );
-            let Some((_, page_index, scale, rotation)) = render_context else {
-                return;
-            };
-            (page_index, scale, rotation)
-        };
-
-        let key = RenderKey::new(path.clone(), page_index, scale, rotation);
-        let generation = self.renderer.invalidate();
-        {
-            let mut state = self.state.borrow_mut();
-            state.generation = generation;
-            state.request_started = None;
-        }
-        self.zoom_label
-            .set_text(&format!("{:.0}%", key.scale() * 100.0));
-
-        let cached = { self.cache.borrow_mut().get(&key).cloned() };
-        if let Some(cached) = cached {
-            *self.surface.borrow_mut() = Some(cached);
-            self.set_page_spin_value(f64::from(page_index + 1));
-            self.area.queue_draw();
-            self.status.set_text("Page loaded from memory cache");
-            let page_count = self.state.borrow().page_count;
-            self.schedule_prefetch(path, page_index, page_count, scale, generation, rotation);
-            return;
-        }
-
-        let generation = self.renderer.request(path.clone(), page_index, scale, rotation);
-        {
-            let mut state = self.state.borrow_mut();
-            state.generation = generation;
-            state.request_started = Some(Instant::now());
-        }
-        *self.surface.borrow_mut() = None;
-        self.area.queue_draw();
-        self.status.set_text("Rendering page…");
-        let count = self.state.borrow().page_count;
-        if count > 0 {
-            self.page_total.set_text(&format!("/ {count}"));
-        } else {
-            self.page_total.set_text("/ …");
-        }
+    pub(crate) fn request_render(&self, path: PathBuf, page_index: i32, scale: f64, rotation: i32) {
+        request_render(self, path, page_index, scale, rotation);
     }
 
-    fn present_page(&self, page: RenderedPage) {
-        {
-            let state = self.state.borrow();
-            if page.generation != state.generation
-                || state.path.as_ref() != Some(&page.path)
-                || state.rotation != page.rotation
-                || (state.scale * 1000.0).round() as u32 != (page.scale * 1000.0).round() as u32
-            {
-                return;
-            }
-        }
-        let key = RenderKey::new(page.path.clone(), page.page_index, page.scale, page.rotation);
-        let render_time = if page.prefetch {
-            None
-        } else {
-            self.state
-                .borrow_mut()
-                .request_started
-                .take()
-                .map(|started| started.elapsed())
-        };
-        let page_surface = match ImageSurface::create_for_data(
-            page.pixels,
-            Format::ARgb32,
-            page.width,
-            page.height,
-            page.stride,
-        ) {
-            Ok(surface) => surface,
-            Err(error) => {
-                self.status
-                    .set_text(&format!("Could not display rendered page: {error}"));
-                return;
-            }
-        };
-        let bytes = (page.stride as usize).saturating_mul(page.height as usize);
-        self.cache
-            .borrow_mut()
-            .insert(key, page_surface.clone(), bytes);
-        if page.prefetch {
-            return;
-        }
-        *self.surface.borrow_mut() = Some(page_surface);
-
-        {
-            let mut state = self.state.borrow_mut();
-            state.page_count = page.page_count;
-            state.page_index = page.page_index;
-            state.page_width_points = page.page_width_points;
-            state.page_height_points = page.page_height_points;
-            state.rotation = page.rotation;
-        }
-        self.area.set_content_width(page.width.saturating_add(32));
-        self.area.set_content_height(page.height.saturating_add(32));
-        self.area.queue_draw();
-        self.page_spin
-            .set_range(1.0, f64::from(page.page_count.max(1)));
-        self.set_page_spin_value(f64::from(page.page_index + 1));
-        self.page_spin.set_sensitive(page.page_count > 0);
-        self.page_total.set_text(&format!("/ {}", page.page_count));
-        self.zoom_label
-            .set_text(&format!("{:.0}%", self.state.borrow().scale * 100.0));
-        self.status.set_text(&format!(
-            "Page {} of {} · {} × {} pt · rendered in {:.0} ms · cache {} MiB",
-            page.page_index + 1,
-            page.page_count,
-            page.page_width_points.round(),
-            page.page_height_points.round(),
-            render_time.map_or(0.0, |time| time.as_secs_f64() * 1000.0),
-            self.cache.borrow().bytes_used() / (1024 * 1024)
-        ));
-        let path = self.state.borrow().path.clone();
-        let scale = self.state.borrow().scale;
-        let rotation = self.state.borrow().rotation;
-        let generation = self.state.borrow().generation;
-        if let Some(path) = path {
-            self.schedule_prefetch(path, page.page_index, page.page_count, scale, generation, rotation);
-        }
+    pub(crate) fn present_page(&self, page: RenderedPage) {
+        present_page(self, page);
     }
 
-    fn schedule_prefetch(
+    pub(crate) fn schedule_prefetch(
         &self,
         path: PathBuf,
         page_index: i32,
@@ -511,21 +152,14 @@ impl ViewerController {
         generation: u64,
         rotation: i32,
     ) {
-        let mut pages = Vec::with_capacity(2);
-        if page_index > 0 {
-            pages.push(page_index - 1);
-        }
-        if page_index + 1 < page_count {
-            pages.push(page_index + 1);
-        }
-        self.renderer.prefetch(path, &pages, scale, generation, rotation);
+        schedule_prefetch(self, path, page_index, page_count, scale, generation, rotation);
     }
 
-    fn show_status(&self, message: &str) {
+    pub(crate) fn show_status(&self, message: &str) {
         self.status.set_text(message);
     }
 
-    fn show_document_properties(&self) {
+    pub(crate) fn show_document_properties(&self) {
         let Some(path) = self.state.borrow().path.clone() else {
             self.show_status("Open a PDF document before viewing its properties.");
             return;
@@ -542,73 +176,86 @@ impl ViewerController {
         }
     }
 
-    fn show_error(&self, error: RenderError) {
+    pub(crate) fn show_error(&self, error: RenderError) {
         if error.generation == self.state.borrow().generation {
             self.status
                 .set_text(&format!("Could not render PDF: {}", error.message));
         }
     }
 
-    fn poll(&self) {
-        while let Ok(result) = self.renderer.try_recv() {
-            match result {
-                RenderResult::Page(page) => self.present_page(page),
-                RenderResult::Error(error) => self.show_error(error),
-            }
-        }
-        while let Ok(result) = self.printer.try_recv() {
-            self.print_button.set_sensitive(true);
-            match result {
-                Ok(outcome) => self.status.set_text(&outcome.message),
-                Err(error) => self.status.set_text(&format!("Print failed: {error}")),
-            }
-        }
+    pub(crate) fn poll(&self) {
+        poll(self);
     }
 
-    fn search_current_page(&self) {
-        let state = self.state.borrow();
-        let Some(path) = state.path.clone() else {
-            self.status.set_text("Open a PDF document before searching.");
+    pub(crate) fn search_current_page(&self) {
+        search_current_page(self);
+    }
+
+    pub(crate) fn scroll_to_search_match(&self, rect: (f64, f64, f64, f64), page_height_points: f64, scale: f64) {
+        let target = search_scroll_target(rect, page_height_points, scale);
+        let adjustment = self.scrolled.vadjustment();
+        let lower = adjustment.lower();
+        let upper = adjustment.upper();
+        let page_size = adjustment.page_size();
+        let max_value = (upper - page_size).max(lower);
+        adjustment.set_value((target - 64.0).clamp(lower, max_value));
+    }
+
+    pub(crate) fn search_next_match(&self) {
+        let total = self.state.borrow().search_highlights.len();
+        if total == 0 {
+            self.status.set_text("No search matches on this page.");
             return;
+        }
+        let next_index = {
+            let state = self.state.borrow();
+            crate::viewer_state::next_search_index(state.search_index, total, 1)
         };
-        let query = self.search_entry.text().trim().to_string();
-        if query.is_empty() {
-            self.status.set_text("Type a word or phrase to search in the PDF.");
-            return;
-        }
-        let page_index = state.page_index;
+        let mut state = self.state.borrow_mut();
+        state.search_index = next_index;
+        let rect = state.search_highlights[state.search_index];
+        let page_height_points = state.page_height_points;
+        let scale = state.scale;
         drop(state);
-
-        match crate::engine::find_text_rectangles_in_page(&path, page_index, &query) {
-            Ok(matches) => {
-                {
-                    let mut state = self.state.borrow_mut();
-                    state.search_highlights = matches.clone();
-                }
-                if matches.is_empty() {
-                    self.status.set_text(&format!(
-                        "No matches found for \"{query}\" on page {}.",
-                        page_index + 1
-                    ));
-                    self.area.queue_draw();
-                    return;
-                }
-                self.status.set_text(&format!(
-                    "Found {} match(es) for \"{query}\" on page {}.",
-                    matches.len(),
-                    page_index + 1
-                ));
-                self.area.queue_draw();
-            }
-            Err(error) => {
-                self.state.borrow_mut().search_highlights.clear();
-                self.area.queue_draw();
-                self.status.set_text(&format!("Search failed: {error}"));
-            }
-        }
+        self.scroll_to_search_match(rect, page_height_points, scale);
+        let state = self.state.borrow();
+        self.status.set_text(&format!(
+            "Match {} of {} on page {}.",
+            state.search_index + 1,
+            total,
+            state.page_index + 1,
+        ));
+        self.area.queue_draw();
     }
 
-    fn submit_print(&self) {
+    pub(crate) fn search_previous_match(&self) {
+        let total = self.state.borrow().search_highlights.len();
+        if total == 0 {
+            self.status.set_text("No search matches on this page.");
+            return;
+        }
+        let previous_index = {
+            let state = self.state.borrow();
+            crate::viewer_state::next_search_index(state.search_index, total, -1)
+        };
+        let mut state = self.state.borrow_mut();
+        state.search_index = previous_index;
+        let rect = state.search_highlights[state.search_index];
+        let page_height_points = state.page_height_points;
+        let scale = state.scale;
+        drop(state);
+        self.scroll_to_search_match(rect, page_height_points, scale);
+        let state = self.state.borrow();
+        self.status.set_text(&format!(
+            "Match {} of {} on page {}.",
+            state.search_index + 1,
+            total,
+            state.page_index + 1,
+        ));
+        self.area.queue_draw();
+    }
+
+    pub(crate) fn submit_print(&self) {
         let Some(path) = self.state.borrow().path.clone() else {
             self.status.set_text("Open a PDF document before printing.");
             return;
@@ -624,39 +271,14 @@ impl ViewerController {
     }
 }
 
-fn compute_fit_width_scale(page_width_points: f64, viewport_width: i32) -> f64 {
-    let available_width = f64::from(viewport_width.max(1));
-    (available_width / page_width_points).clamp(0.1, 4.0)
+fn search_scroll_target(rect: (f64, f64, f64, f64), page_height_points: f64, scale: f64) -> f64 {
+    let y_top_points = page_height_points - rect.1.max(rect.3);
+    (y_top_points * scale).max(0.0)
 }
 
-fn cairo_search_highlight_rects(
-    page_height_points: f64,
-    scale: f64,
-    rectangles: &[(f64, f64, f64, f64)],
-) -> Vec<(f64, f64, f64, f64)> {
-    rectangles
-        .iter()
-        .map(|(x1, y1, x2, y2)| {
-            let x_left = (*x1 * scale).min(*x2 * scale);
-            let x_right = (*x1 * scale).max(*x2 * scale);
-            let y_top = (page_height_points - *y2) * scale;
-            let y_bottom = (page_height_points - *y1) * scale;
-            let top = y_top.min(y_bottom);
-            let bottom = y_top.max(y_bottom);
-            (x_left, top, x_right, bottom)
-        })
-        .collect()
-}
-
-fn compute_fit_page_scale(page_width_points: f64, page_height_points: f64, viewport_width: i32, viewport_height: i32) -> f64 {
-    let available_width = f64::from(viewport_width.max(1));
-    let available_height = f64::from(viewport_height.max(1));
-    let width_scale = available_width / page_width_points;
-    let height_scale = available_height / page_height_points;
-    width_scale.min(height_scale).clamp(0.1, 4.0)
-}
 
 #[cfg(test)]
+#[allow(clippy::items_after_test_module)]
 mod tests {
     use super::*;
 
@@ -714,11 +336,13 @@ mod tests {
 
     #[test]
     fn render_request_state_clamps_scale_and_normalizes_rotation() {
-        let mut state = ViewerState::default();
-        state.page_count = 10;
-        state.page_index = 1;
-        state.scale = 0.05;
-        state.rotation = 270;
+        let mut state = ViewerState {
+            page_count: 10,
+            page_index: 1,
+            scale: 0.05,
+            rotation: 270,
+            ..ViewerState::default()
+        };
 
         let result = apply_render_request(
             &mut state,
@@ -811,6 +435,22 @@ mod tests {
     }
 
     #[test]
+    fn search_scroll_target_converts_from_pdf_to_cairo_space() {
+        let rect = (10.0, 20.0, 50.0, 30.0);
+        let target = super::search_scroll_target(rect, 100.0, 1.0);
+        assert_eq!(target, 70.0);
+    }
+
+    #[test]
+    fn ctrl_scroll_zoom_steps_in_the_expected_direction() {
+        use gtk4::gdk::ModifierType;
+
+        assert_eq!(crate::navigation::scroll_zoom_step(-1.0, ModifierType::CONTROL_MASK), 0.1);
+        assert_eq!(crate::navigation::scroll_zoom_step(1.0, ModifierType::CONTROL_MASK), -0.1);
+        assert_eq!(crate::navigation::scroll_zoom_step(-1.0, ModifierType::SHIFT_MASK), 0.0);
+    }
+
+    #[test]
     fn window_geometry_persists_between_sessions() {
         let base = std::env::temp_dir().join(format!(
             "gpdfview-window-size-{}-{}",
@@ -830,11 +470,14 @@ mod tests {
     }
 }
 
-fn action_button(icon_name: &str, tooltip: &str) -> gtk::Button {
-    let button = gtk::Button::from_icon_name(icon_name);
-    button.set_tooltip_text(Some(tooltip));
-    button.set_has_frame(false);
-    button
+pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
+    crate::window::build_ui(app)
+}
+
+pub(crate) fn create_document_controller(
+    params: DocumentControllerParams<'_>,
+) -> Rc<ViewerController> {
+    crate::window::create_document_controller(params)
 }
 
 pub fn run() {
@@ -883,32 +526,10 @@ pub fn run() {
     app.run();
 }
 
-fn new_worker_pair() -> Result<(Rc<PdfRenderer>, Rc<PrintService>), String> {
+pub(crate) fn new_worker_pair() -> Result<(Rc<PdfRenderer>, Rc<PrintService>), String> {
     let renderer = PdfRenderer::new().map(Rc::new).map_err(|error| format!("Could not start PDF renderer: {error}"))?;
     let printer = PrintService::new().map(Rc::new).map_err(|error| format!("Could not start print worker: {error}"))?;
     Ok((renderer, printer))
-}
-
-fn selected_pdf_paths(model: &gio::ListModel) -> Vec<PathBuf> {
-    let mut selected = Vec::new();
-    for index in 0..model.n_items() {
-        let Some(item) = model.item(index) else {
-            continue;
-        };
-        let Ok(file) = item.downcast::<gio::File>() else {
-            continue;
-        };
-        let Some(path) = file.path() else {
-            continue;
-        };
-        let Some(ext) = path.extension().and_then(|value| value.to_str()) else {
-            continue;
-        };
-        if ext.eq_ignore_ascii_case("pdf") {
-            selected.push(path);
-        }
-    }
-    selected
 }
 
 #[cfg(test)]
@@ -934,563 +555,3 @@ fn selected_pdf_paths_from_store(store: &gio::ListStore) -> Vec<PathBuf> {
     selected
 }
 
-fn open_document_in_new_tab(
-    app: &adw::Application,
-    window: &adw::ApplicationWindow,
-    tab_manager: Rc<RefCell<DocumentTabManager>>,
-    path: PathBuf,
-    title_label: gtk::Label,
-    print_button: gtk::Button,
-) -> Option<Rc<ViewerController>> {
-    let filename = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or("Document")
-        .to_string();
-    let (renderer, printer) = match new_worker_pair() {
-        Ok(pair) => pair,
-        Err(error) => {
-            eprintln!("{error}");
-            return None;
-        }
-    };
-    let new_controller = create_document_controller(
-        app.clone(),
-        window,
-        renderer,
-        printer,
-        tab_manager.clone(),
-        Some(path.clone()),
-        title_label,
-        print_button,
-    );
-    tab_manager.borrow().add_tab(&new_controller.root, &filename);
-    remember_recent_document(&path);
-    new_controller.open_document(path);
-    Some(new_controller)
-}
-
-fn append_sidebar_entry(
-    list: &gtk::ListBox,
-    path: PathBuf,
-    label_text: &str,
-    app: &adw::Application,
-    window: &adw::ApplicationWindow,
-    tab_manager: Rc<RefCell<DocumentTabManager>>,
-    title_label: gtk::Label,
-    print_button: gtk::Button,
-) {
-    let row = gtk::ListBoxRow::new();
-    let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    row_box.set_margin_start(8);
-    row_box.set_margin_end(8);
-    row_box.set_margin_top(4);
-    row_box.set_margin_bottom(4);
-
-    let label = gtk::Label::new(Some(label_text));
-    label.set_xalign(0.0);
-    label.set_hexpand(true);
-    row_box.append(&label);
-
-    let star = gtk::ToggleButton::with_label("★");
-    star.set_active(is_favorite_document(&path));
-    let star_path = path.clone();
-    star.connect_toggled(move |button| {
-        let was_favorite = toggle_favorite_document(&star_path);
-        button.set_active(was_favorite);
-    });
-    row_box.append(&star);
-    row.set_child(Some(&row_box));
-
-    let row_path = path.clone();
-    let row_window = window.clone();
-    let row_app = app.clone();
-    let row_manager = tab_manager.clone();
-    let row_title = title_label.clone();
-    let row_print = print_button.clone();
-    row.connect_activate(move |_| {
-        let _ = open_document_in_new_tab(
-            &row_app,
-            &row_window,
-            row_manager.clone(),
-            row_path.clone(),
-            row_title.clone(),
-            row_print.clone(),
-        );
-    });
-
-    list.append(&row);
-}
-
-fn show_open_dialog(
-    app: adw::Application,
-    window: adw::ApplicationWindow,
-    tab_manager: Rc<RefCell<DocumentTabManager>>,
-    controller: Rc<ViewerController>,
-    last_directory: Option<PathBuf>,
-) {
-    let dialog = gtk::FileDialog::builder().title("Open PDF").build();
-    let filter = gtk::FileFilter::new();
-    filter.set_name(Some("PDF documents"));
-    filter.add_mime_type("application/pdf");
-    filter.add_pattern("*.pdf");
-    let filters = gio::ListStore::new::<gtk::FileFilter>();
-    filters.append(&filter);
-    dialog.set_filters(Some(&filters));
-    dialog.set_default_filter(Some(&filter));
-
-    if let Some(directory) = last_directory {
-        let folder = gio::File::for_path(&directory);
-        dialog.set_initial_folder(Some(&folder));
-    }
-
-    let dialog_window = window.clone();
-    let dialog_parent = dialog_window.clone();
-    let dialog_app = app.clone();
-    dialog.open_multiple(
-        Some(&dialog_parent),
-        None::<&gio::Cancellable>,
-        move |result| match result {
-            Ok(files) => {
-                let paths = selected_pdf_paths(&files);
-                if paths.is_empty() {
-                    controller
-                        .status
-                        .set_text("No PDF files were selected from the picker.");
-                    return;
-                }
-                for path in paths {
-                    if let Some(parent) = path.parent() {
-                        remember_last_directory(parent);
-                    }
-                    if let Some(new_controller) = open_document_in_new_tab(
-                        &dialog_app,
-                        &dialog_window,
-                        tab_manager.clone(),
-                        path.clone(),
-                        controller.title.clone(),
-                        controller.print_button.clone(),
-                    ) {
-                        let _ = new_controller;
-                    }
-                }
-            }
-            Err(error) if error.matches(gio::IOErrorEnum::Cancelled) => {}
-            Err(error) => controller
-                .status
-                .set_text(&format!("Could not open file picker: {error}")),
-        },
-    );
-}
-
-fn build_sidebar(
-    app: &adw::Application,
-    window: &adw::ApplicationWindow,
-    tab_manager: Rc<RefCell<DocumentTabManager>>,
-    title_label: gtk::Label,
-    print_button: gtk::Button,
-) -> gtk::Box {
-    let sidebar = gtk::Box::new(gtk::Orientation::Vertical, 8);
-    sidebar.set_size_request(220, -1);
-    sidebar.set_margin_start(8);
-    sidebar.set_margin_end(8);
-    sidebar.set_margin_top(8);
-    sidebar.set_margin_bottom(8);
-
-    let recent_label = gtk::Label::new(Some("Recent"));
-    recent_label.set_halign(gtk::Align::Start);
-    recent_label.set_markup("<b>Recent</b>");
-    sidebar.append(&recent_label);
-
-    let recent_list = gtk::ListBox::new();
-    recent_list.set_selection_mode(gtk::SelectionMode::Single);
-    for path in load_recent_documents() {
-        let label = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("Document")
-            .to_string();
-        append_sidebar_entry(
-            &recent_list,
-            path,
-            &label,
-            app,
-            window,
-            tab_manager.clone(),
-            title_label.clone(),
-            print_button.clone(),
-        );
-    }
-    sidebar.append(&recent_list);
-
-    let favorites_label = gtk::Label::new(Some("Favorites"));
-    favorites_label.set_halign(gtk::Align::Start);
-    favorites_label.set_markup("<b>Favorites</b>");
-    sidebar.append(&favorites_label);
-
-    let favorites_list = gtk::ListBox::new();
-    favorites_list.set_selection_mode(gtk::SelectionMode::Single);
-    for path in load_favorite_documents() {
-        let label = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("Document")
-            .to_string();
-        append_sidebar_entry(
-            &favorites_list,
-            path,
-            &label,
-            app,
-            window,
-            tab_manager.clone(),
-            title_label.clone(),
-            print_button.clone(),
-        );
-    }
-    sidebar.append(&favorites_list);
-
-    sidebar
-}
-
-fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
-    let (renderer, printer) = match new_worker_pair() {
-        Ok(pair) => pair,
-        Err(error) => {
-            eprintln!("{error}");
-            app.quit();
-            return None;
-        }
-    };
-
-    let window = adw::ApplicationWindow::builder()
-        .application(app)
-        .title("gpdfview")
-        .default_width(1080)
-        .default_height(760)
-        .build();
-    if let Some((width, height)) = last_window_geometry_for_home_path() {
-        window.set_default_size(width, height);
-        remember_window_geometry(width, height);
-    } else {
-        remember_window_geometry(1080, 760);
-    }
-
-    let shell = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    let header = gtk::HeaderBar::new();
-    let title = gtk::Label::new(Some("gpdfview"));
-    header.set_title_widget(Some(&title));
-
-    let sidebar_button = action_button("sidebar-show-symbolic", "Toggle document sidebar");
-    header.pack_start(&sidebar_button);
-    let open_button = action_button("document-open-symbolic", "Open a PDF document");
-    header.pack_start(&open_button);
-    let fullscreen_button = action_button("view-fullscreen-symbolic", "Toggle fullscreen");
-    header.pack_end(&fullscreen_button);
-    let presentation_button = action_button("view-presentation-symbolic", "Toggle presentation mode");
-    header.pack_end(&presentation_button);
-    let properties_button = action_button("document-properties-symbolic", "Document properties");
-    header.pack_end(&properties_button);
-    let print_button = action_button("printer-symbolic", "Send the current PDF to the default printer");
-    print_button.set_sensitive(false);
-    header.pack_end(&print_button);
-
-    let last_directory = last_directory_for_home_path();
-
-    let notebook = gtk::Notebook::new();
-    notebook.set_scrollable(true);
-    notebook.set_show_border(false);
-    notebook.set_show_tabs(false);
-    notebook.set_tab_pos(gtk::PositionType::Top);
-    notebook.set_hexpand(true);
-    notebook.set_vexpand(true);
-
-    let tab_manager = Rc::new(RefCell::new(DocumentTabManager::new(notebook.clone())));
-    let sidebar = build_sidebar(app, &window, tab_manager.clone(), title.clone(), print_button.clone());
-    sidebar.set_visible(false);
-
-    let content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    content.append(&sidebar);
-    content.append(&notebook);
-    shell.append(&header);
-    shell.append(&content);
-
-    let initial = create_document_controller(
-        app.clone(),
-        &window,
-        renderer.clone(),
-        printer.clone(),
-        tab_manager.clone(),
-        None,
-        title.clone(),
-        print_button.clone(),
-    );
-    if let Some(path) = newest_valid_recent_document(&load_recent_documents()) {
-        initial.open_document(path);
-    }
-    let open_controller = initial.clone();
-    let open_window = window.clone();
-    let open_tab_manager = tab_manager.clone();
-    let open_app = app.clone();
-    let sidebar_toggle = sidebar.clone();
-    sidebar_button.connect_clicked(move |_| {
-        let visible = sidebar_toggle.is_visible();
-        sidebar_toggle.set_visible(!visible);
-    });
-    let fullscreen_window = open_window.clone();
-    fullscreen_button.connect_clicked(move |_| {
-        if fullscreen_window.is_fullscreen() {
-            fullscreen_window.unfullscreen();
-        } else {
-            fullscreen_window.fullscreen();
-        }
-    });
-    let properties_window = open_window.clone();
-    let properties_controller = initial.clone();
-    properties_button.connect_clicked(move |_| {
-        properties_controller.show_document_properties();
-        if properties_window.is_fullscreen() {
-            properties_window.fullscreen();
-        }
-    });
-    let presentation_window = open_window.clone();
-    let presentation_controller = initial.clone();
-    presentation_button.connect_clicked(move |_| {
-        presentation_controller.toggle_presentation_mode();
-        if presentation_window.is_fullscreen() {
-            presentation_window.fullscreen();
-        }
-    });
-    open_button.connect_clicked({
-        let open_controller = open_controller.clone();
-        let open_tab_manager = open_tab_manager.clone();
-        let open_app = open_app.clone();
-        let open_window = open_window.clone();
-        let last_directory = last_directory.clone();
-        move |_| {
-            show_open_dialog(
-                open_app.clone(),
-                open_window.clone(),
-                open_tab_manager.clone(),
-                open_controller.clone(),
-                last_directory.clone(),
-            );
-        }
-    });
-    window.set_content(Some(&shell));
-    window.present();
-    Some(initial)
-}
-
-fn create_document_controller(
-    app: adw::Application,
-    window: &adw::ApplicationWindow,
-    renderer: Rc<PdfRenderer>,
-    printer: Rc<PrintService>,
-    tab_manager: Rc<RefCell<DocumentTabManager>>,
-    initial_path: Option<PathBuf>,
-    title: gtk::Label,
-    print_button: gtk::Button,
-) -> Rc<ViewerController> {
-    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    toolbar.set_margin_top(6);
-    toolbar.set_margin_bottom(6);
-    toolbar.set_margin_start(12);
-    toolbar.set_margin_end(12);
-
-    let previous_button = action_button("go-previous-symbolic", "Previous page");
-    let page_spin = gtk::SpinButton::with_range(1.0, 1.0, 1.0);
-    page_spin.set_sensitive(false);
-    page_spin.set_width_chars(5);
-    let page_total = gtk::Label::new(Some("/ 0"));
-    let next_button = action_button("go-next-symbolic", "Next page");
-    let search_entry = gtk::SearchEntry::new();
-    search_entry.set_placeholder_text(Some("Search in page"));
-    let search_button = action_button("system-search-symbolic", "Search in this page");
-    let zoom_out = action_button("zoom-out-symbolic", "Zoom out");
-    let zoom_label = gtk::Label::new(Some("100%"));
-    let zoom_in = action_button("zoom-in-symbolic", "Zoom in");
-    let fit_width = action_button("zoom-fit-best-symbolic", "Fit width");
-    let fit_page = action_button("zoom-fit-best-symbolic", "Fit page");
-    let rotate_left = action_button("object-rotate-left-symbolic", "Rotate left");
-    let rotate_right = action_button("object-rotate-right-symbolic", "Rotate right");
-
-    toolbar.append(&previous_button);
-    toolbar.append(&page_spin);
-    toolbar.append(&page_total);
-    toolbar.append(&next_button);
-    toolbar.append(&gtk::Separator::new(gtk::Orientation::Vertical));
-    toolbar.append(&search_entry);
-    toolbar.append(&search_button);
-    toolbar.append(&gtk::Separator::new(gtk::Orientation::Vertical));
-    toolbar.append(&zoom_out);
-    toolbar.append(&zoom_label);
-    toolbar.append(&zoom_in);
-    toolbar.append(&fit_width);
-    toolbar.append(&fit_page);
-    toolbar.append(&rotate_left);
-    toolbar.append(&rotate_right);
-    root.append(&toolbar);
-
-    let drawing_area = gtk::DrawingArea::new();
-    drawing_area.set_content_width(640);
-    drawing_area.set_content_height(820);
-    drawing_area.set_hexpand(true);
-    drawing_area.set_vexpand(true);
-    let current_surface = Rc::new(RefCell::new(None::<ImageSurface>));
-    let draw_surface = Rc::clone(&current_surface);
-    let scrolled = gtk::ScrolledWindow::builder()
-        .hexpand(true)
-        .vexpand(true)
-        .child(&drawing_area)
-        .build();
-    root.append(&scrolled);
-
-    let status = gtk::Label::new(Some("Open a PDF document to begin"));
-    status.set_xalign(0.0);
-    status.set_margin_start(12);
-    status.set_margin_end(12);
-    status.set_margin_top(6);
-    status.set_margin_bottom(6);
-    root.append(&status);
-
-    let controller = Rc::new(ViewerController {
-        renderer: renderer.clone(),
-        printer: printer.clone(),
-        state: Rc::new(RefCell::new(ViewerState {
-            scale: DEFAULT_ZOOM,
-            ..ViewerState::default()
-        })),
-        cache: Rc::new(RefCell::new(LruCache::new(CACHE_LIMIT_BYTES))),
-        surface: current_surface,
-        area: drawing_area.clone(),
-        scrolled,
-        page_spin,
-        suppress_spin_events: Rc::new(Cell::new(false)),
-        page_total,
-        zoom_label,
-        search_entry,
-        status,
-        print_button,
-        title,
-        toolbar: toolbar.clone(),
-        window: window.clone(),
-        root: root.clone(),
-    });
-
-    let draw_controller = controller.clone();
-    drawing_area.set_draw_func(move |_, context, width, height| {
-        context.set_source_rgb(0.18, 0.19, 0.21);
-        let _ = context.paint();
-
-        if let Some(surface) = draw_surface.borrow().as_ref() {
-            let x = f64::from((width - surface.width()) / 2).max(16.0);
-            let y = f64::from((height - surface.height()) / 2).max(16.0);
-            if context.set_source_surface(surface, x, y).is_ok() {
-                let _ = context.paint();
-            }
-
-            let state = draw_controller.state.borrow();
-            if !state.search_highlights.is_empty() {
-                context.set_source_rgba(1.0, 0.9, 0.1, 0.45);
-                let page_height = state.page_height_points.max(1.0);
-                let highlights = cairo_search_highlight_rects(page_height, state.scale, &state.search_highlights);
-                for (left, top, right, bottom) in highlights {
-                    context.rectangle(x + left, y + top, right - left, bottom - top);
-                    context.fill().expect("search highlight should be renderable");
-                }
-            }
-        } else {
-            context.set_source_rgb(0.82, 0.83, 0.85);
-            context.select_font_face("Sans", gtk4::cairo::FontSlant::Normal, gtk4::cairo::FontWeight::Normal);
-            context.set_font_size(16.0);
-            context.move_to(24.0, 40.0);
-            let _ = context.show_text("Open a PDF to start reading");
-        }
-    });
-
-    let key_controller = gtk::EventControllerKey::new();
-    let input_controller = key_controller.clone();
-    controller.area.add_controller(key_controller);
-    let keyboard_controller = controller.clone();
-    let last_directory = last_directory_for_home_path();
-    let open_window = window.clone();
-    let open_app = app.clone();
-    let open_tab_manager = tab_manager.clone();
-    input_controller.connect_key_pressed(move |_, keyval, _, state| {
-        let key_name = keyval.name().unwrap_or_default();
-        let action = resolve_key_action(&key_name, state.bits());
-        if let Some(KeyAction::OpenFile) = action {
-            show_open_dialog(
-                open_app.clone(),
-                open_window.clone(),
-                open_tab_manager.clone(),
-                keyboard_controller.clone(),
-                last_directory.clone(),
-            );
-            return gtk::glib::Propagation::Stop;
-        }
-        if let Some(action) = action {
-            keyboard_controller.handle_key_action(action);
-            return gtk::glib::Propagation::Stop;
-        }
-        gtk::glib::Propagation::Proceed
-    });
-
-    let print_controller = controller.clone();
-    let print_button = controller.print_button.clone();
-    print_button.connect_clicked(move |_| {
-        print_controller.submit_print();
-    });
-
-    let previous_controller = controller.clone();
-    previous_button.connect_clicked(move |_| {
-        let page = previous_controller.state.borrow().page_index - 1;
-        previous_controller.navigate_to(page);
-    });
-    let next_controller = controller.clone();
-    next_button.connect_clicked(move |_| {
-        let page = next_controller.state.borrow().page_index + 1;
-        next_controller.navigate_to(page);
-    });
-    let page_spin = controller.page_spin.clone();
-    let spin_controller = controller.clone();
-    page_spin.connect_value_changed(move |spin| {
-        if spin_controller.suppress_spin_events.get() || !spin.is_sensitive() {
-            return;
-        }
-        let target_page = spin.value_as_int() - 1;
-        if target_page != spin_controller.state.borrow().page_index {
-            spin_controller.navigate_to(target_page);
-        }
-    });
-    let zoom_out_controller = controller.clone();
-    zoom_out.connect_clicked(move |_| zoom_out_controller.change_zoom(-0.1));
-    let zoom_in_controller = controller.clone();
-    zoom_in.connect_clicked(move |_| zoom_in_controller.change_zoom(0.1));
-    let search_controller = controller.clone();
-    search_button.connect_clicked(move |_| search_controller.search_current_page());
-    let search_activate_controller = controller.clone();
-    controller.search_entry.connect_activate(move |_| {
-        search_activate_controller.search_current_page();
-    });
-    let fit_controller = controller.clone();
-    fit_width.connect_clicked(move |_| fit_controller.fit_width());
-    let fit_page_controller = controller.clone();
-    fit_page.connect_clicked(move |_| fit_page_controller.fit_page());
-    let rotate_left_controller = controller.clone();
-    rotate_left.connect_clicked(move |_| rotate_left_controller.rotate_page(-90));
-    let rotate_right_controller = controller.clone();
-    rotate_right.connect_clicked(move |_| rotate_right_controller.rotate_page(90));
-
-    let poll_controller = controller.clone();
-    glib::timeout_add_local(Duration::from_millis(16), move || {
-        poll_controller.poll();
-        glib::ControlFlow::Continue
-    });
-
-    if let Some(path) = initial_path {
-        controller.open_document(path);
-    }
-    controller
-}

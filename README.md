@@ -8,7 +8,7 @@ The project's primary goal is to reproduce the core functionality and user exper
 
 Performance is a fundamental requirement. gpdfview is being designed to provide fast document opening, responsive navigation, efficient rendering and reliable printing, including when working with large PDF documents containing hundreds or thousands of pages.
 
-> **Project status:** Early prototype. The current build opens a PDF, renders pages on a dedicated Poppler worker, supports page navigation and zoom, uses a byte-bounded page cache with adjacent-page prefetch, and submits printing through CUPS with a page-by-page Cairo fallback. This is the first milestone, not qpdfview feature parity. Unit tests cover rendering, request coalescing, memory bounds and print-PDF generation; comparative qpdfview benchmarks and physical print validation remain pending.
+> **Project status:** Active alpha with stable modular core. The current build supports multi-document tabs, page navigation, zoom, fit-width/fit-page, rotation, in-page text search with match navigation, session recovery (recent files, favorites and last directory), layout modes (single/continuous/two-page), and printing through CUPS with a page-by-page Cairo fallback. The project is still below full qpdfview parity, mainly missing full thumbnails/outlines integration, advanced document settings, annotations/forms parity and deeper comparative performance validation.
 
 ---
 

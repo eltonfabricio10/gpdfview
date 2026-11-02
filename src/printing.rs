@@ -144,13 +144,15 @@ fn render_for_printing(source: &Path, destination: &Path) -> Result<(), String> 
                 PdfSurface::new(width, height, destination).map_err(|error| error.to_string())?,
             );
         }
-        let surface = surface.as_ref().expect("print surface was created");
+        let surface = surface
+            .as_ref()
+            .ok_or_else(|| "Could not initialize print surface".to_string())?;
         let context = Context::new(surface).map_err(|error| error.to_string())?;
         page.render_for_printing(&context);
         context.show_page().map_err(|error| error.to_string())?;
     }
 
-    let surface = surface.expect("document has at least one page");
+    let surface = surface.ok_or_else(|| "PDF contains no printable pages".to_string())?;
     surface.finish();
     surface.status().map_err(|error| error.to_string())
 }

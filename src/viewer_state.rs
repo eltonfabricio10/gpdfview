@@ -3,6 +3,28 @@ use std::time::Instant;
 
 pub const DEFAULT_ZOOM: f64 = 1.0;
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LayoutMode {
+    #[default]
+    SinglePage,
+    Continuous,
+    TwoPage,
+}
+
+impl LayoutMode {
+    pub fn toggle(self) -> Self {
+        match self {
+            Self::SinglePage => Self::Continuous,
+            Self::Continuous => Self::TwoPage,
+            Self::TwoPage => Self::SinglePage,
+        }
+    }
+
+    pub fn next(self) -> Self {
+        self.toggle()
+    }
+}
+
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct RenderKey {
     pub path: PathBuf,
@@ -37,7 +59,9 @@ pub struct ViewerState {
     pub rotation: i32,
     pub generation: u64,
     pub request_started: Option<Instant>,
+    pub layout_mode: LayoutMode,
     pub search_highlights: Vec<(f64, f64, f64, f64)>,
+    pub search_index: usize,
 }
 
 pub fn normalize_rotation(rotation: i32) -> i32 {
@@ -51,6 +75,15 @@ pub fn sanitize_scale(scale: f64) -> f64 {
     } else {
         DEFAULT_ZOOM
     }
+}
+
+pub fn next_search_index(current: usize, total: usize, direction: i32) -> usize {
+    if total == 0 {
+        return 0;
+    }
+    let current = current as i32;
+    let total = total as i32;
+    ((current + direction).rem_euclid(total)) as usize
 }
 
 pub fn apply_render_request(
@@ -75,4 +108,29 @@ pub fn apply_render_request(
     state.search_highlights.clear();
 
     Some((path, normalized_page_index, normalized_scale, normalized_rotation))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{LayoutMode, ViewerState};
+
+    #[test]
+    fn layout_mode_cycles_across_single_continuous_and_two_page() {
+        assert_eq!(LayoutMode::SinglePage.toggle(), LayoutMode::Continuous);
+        assert_eq!(LayoutMode::Continuous.toggle(), LayoutMode::TwoPage);
+        assert_eq!(LayoutMode::TwoPage.toggle(), LayoutMode::SinglePage);
+    }
+
+    #[test]
+    fn viewer_defaults_to_single_page_layout() {
+        let state = ViewerState::default();
+        assert_eq!(state.layout_mode, LayoutMode::SinglePage);
+    }
+
+    #[test]
+    fn search_index_wraps_around_for_next_and_previous_results() {
+        assert_eq!(super::next_search_index(0, 3, 1), 1);
+        assert_eq!(super::next_search_index(2, 3, 1), 0);
+        assert_eq!(super::next_search_index(0, 3, -1), 2);
+    }
 }

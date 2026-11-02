@@ -71,6 +71,17 @@ impl<K: Eq + Hash + Clone, V> LruCache<K, V> {
         self.bytes_used
     }
 
+    pub fn snapshot(&self) -> Vec<(K, V)>
+    where
+        K: Clone,
+        V: Clone,
+    {
+        self.entries
+            .iter()
+            .map(|(key, entry)| (key.clone(), entry.value.clone()))
+            .collect()
+    }
+
     pub fn clear(&mut self) {
         self.entries.clear();
         self.bytes_used = 0;

@@ -1,8 +1,10 @@
 use gtk4::cairo::{Context, Format, ImageSurface};
 use gtk4::gio;
 use gtk4::gio::prelude::*;
+use gtk4::glib::translate::ToGlibPtr;
 use poppler::{Document, Page};
 use std::collections::VecDeque;
+use std::ffi::CStr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex, mpsc};
@@ -47,6 +49,91 @@ pub struct RenderError {
 pub enum RenderResult {
     Page(RenderedPage),
     Error(RenderError),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct OutlineEntry {
+    pub title: String,
+    pub page_index: i32,
+    pub depth: u32,
+}
+
+pub fn document_outline(path: &PathBuf) -> Result<Vec<OutlineEntry>, String> {
+    let document = load_document(path)?;
+    let mut entries = Vec::new();
+
+    unsafe {
+        let root = poppler::ffi::poppler_index_iter_new(document.to_glib_none().0);
+        if root.is_null() {
+            return Ok(entries);
+        }
+        collect_outline_entries(root, 0, &mut entries);
+        poppler::ffi::poppler_index_iter_free(root);
+    }
+
+    Ok(entries)
+}
+
+unsafe fn collect_outline_entries(
+    iter: *mut poppler::ffi::PopplerIndexIter,
+    depth: u32,
+    entries: &mut Vec<OutlineEntry>,
+) {
+    loop {
+        if let Some(entry) = outline_entry_from_iter(iter, depth) {
+            entries.push(entry);
+        }
+
+        let child = poppler::ffi::poppler_index_iter_get_child(iter);
+        if !child.is_null() {
+            collect_outline_entries(child, depth + 1, entries);
+            poppler::ffi::poppler_index_iter_free(child);
+        }
+
+        if poppler::ffi::poppler_index_iter_next(iter) == 0 {
+            break;
+        }
+    }
+}
+
+unsafe fn outline_entry_from_iter(
+    iter: *mut poppler::ffi::PopplerIndexIter,
+    depth: u32,
+) -> Option<OutlineEntry> {
+    let action = poppler::ffi::poppler_index_iter_get_action(iter);
+    if action.is_null() {
+        return None;
+    }
+
+    let any = (*action).any;
+    let title = if any.title.is_null() {
+        "Section".to_string()
+    } else {
+        let value = CStr::from_ptr(any.title).to_string_lossy().trim().to_string();
+        if value.is_empty() {
+            "Section".to_string()
+        } else {
+            value
+        }
+    };
+
+    let page_index = if any.type_ == poppler::ffi::POPPLER_ACTION_GOTO_DEST {
+        let goto_dest = (*action).goto_dest;
+        if goto_dest.dest.is_null() {
+            None
+        } else {
+            Some(((*goto_dest.dest).page_num - 1).max(0))
+        }
+    } else {
+        None
+    };
+
+    poppler::ffi::poppler_action_free(action);
+    page_index.map(|page_index| OutlineEntry {
+        title,
+        page_index,
+        depth,
+    })
 }
 
 #[allow(dead_code)]
@@ -139,7 +226,9 @@ impl PdfRenderer {
             prefetch: false,
         };
         let (lock, wake) = &*self.pending;
-        let mut state = lock.lock().expect("renderer request lock poisoned");
+        let Ok(mut state) = lock.lock() else {
+            return generation;
+        };
         state.prefetches.clear();
         state.request = Some(request);
         wake.notify_one();
@@ -161,7 +250,9 @@ impl PdfRenderer {
         };
         let rotation = normalize_rotation(rotation);
         let (lock, wake) = &*self.pending;
-        let mut state = lock.lock().expect("renderer request lock poisoned");
+        let Ok(mut state) = lock.lock() else {
+            return;
+        };
         state
             .prefetches
             .retain(|request| request.generation == generation);
@@ -506,6 +597,13 @@ mod tests {
         let fixture = PdfFixture::two_page();
         let matches = super::find_text_in_page(&fixture.0, 0, "First").expect("search should work");
         assert!(matches > 0, "expected at least one match for 'First'");
+    }
+
+    #[test]
+    fn outline_lookup_is_safe_for_valid_documents() {
+        let fixture = PdfFixture::two_page();
+        let outline = super::document_outline(&fixture.0).expect("outline lookup should succeed");
+        assert!(outline.len() <= 10_000);
     }
 
     #[test]

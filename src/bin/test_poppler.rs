@@ -5,7 +5,6 @@
 /// 2. Consulta de informações básicas (página, título, tamanho)
 /// 3. Renderização de página simples em Cairo
 /// 4. Segurança de acesso em múltiplas threads (se aplicável)
-
 use anyhow::{Context, Result};
 use std::path::PathBuf;
 
