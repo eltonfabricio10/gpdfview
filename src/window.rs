@@ -23,7 +23,7 @@ use crate::session::{
 use crate::sidebar::build_sidebar;
 use crate::ui_commands::{dispatch_ui_command, UiCommand};
 use crate::ui_helpers::action_button;
-use crate::viewer_state::{LayoutMode, ViewerState, DEFAULT_ZOOM};
+use crate::viewer_state::{LayoutMode, SplitViewMode, ViewerState, DEFAULT_ZOOM};
 
 pub(crate) struct DocumentControllerParams<'a> {
     pub app: adw::Application,
@@ -241,6 +241,22 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     let view_presentation_item = append_menu_item(&view_menu_box, "Modo apresentacao", move || {
         dispatch_ui_command(&view_presentation_controller, UiCommand::TogglePresentation, None);
     });
+    let view_split_horizontal_controller = initial.clone();
+    let view_split_horizontal_item = append_menu_item(&view_menu_box, "Dividir horizontalmente", move || {
+        dispatch_ui_command(&view_split_horizontal_controller, UiCommand::ToggleSplitViewHorizontal, None);
+    });
+    let view_split_vertical_controller = initial.clone();
+    let view_split_vertical_item = append_menu_item(&view_menu_box, "Dividir verticalmente", move || {
+        dispatch_ui_command(&view_split_vertical_controller, UiCommand::ToggleSplitViewVertical, None);
+    });
+    let view_close_split_controller = initial.clone();
+    let view_close_split_item = append_menu_item(&view_menu_box, "Fechar divisao", move || {
+        dispatch_ui_command(&view_close_split_controller, UiCommand::CloseSplitView, None);
+    });
+    let view_sync_split_controller = initial.clone();
+    let view_sync_split_item = append_menu_item(&view_menu_box, "Sincronizar panes", move || {
+        dispatch_ui_command(&view_sync_split_controller, UiCommand::ToggleSplitSync, None);
+    });
 
     let menu_tabs_controller = initial.clone();
     let tabs_hint_item = append_menu_item(&tabs_menu_box, "Gerenciar abas", move || {
@@ -296,6 +312,10 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         edit_next_match_item,
         edit_prev_match_item,
         view_presentation_item,
+        view_split_horizontal_item,
+        view_split_vertical_item,
+        view_close_split_item,
+        view_sync_split_item,
         bookmarks_toggle_item,
     ];
     let sensitivity_controller = initial.clone();
@@ -454,24 +474,30 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
         let _ = context.paint();
 
         let state = draw_controller.state.borrow();
+        let split_mode = state.split_mode;
+        let layout_mode = state.layout_mode;
         let mut page_surfaces = Vec::new();
         if let Some(path) = state.path.clone() {
-            let pages: Vec<i32> = match state.layout_mode {
-                LayoutMode::SinglePage => vec![state.page_index],
-                LayoutMode::Continuous => {
-                    let start = (state.page_index - 2).max(0);
-                    let end = (state.page_index + 2).min(state.page_count.max(1) - 1);
-                    (start..=end).collect()
-                }
-                LayoutMode::TwoPage => {
-                    let mut pages = vec![state.page_index];
-                    if state.page_count > 0 && state.page_index + 1 < state.page_count {
-                        pages.push(state.page_index + 1);
+            let pages: Vec<i32> = if split_mode != SplitViewMode::Off {
+                state.split_pages()
+            } else {
+                match layout_mode {
+                    LayoutMode::SinglePage => vec![state.page_index],
+                    LayoutMode::Continuous => {
+                        let start = (state.page_index - 2).max(0);
+                        let end = (state.page_index + 2).min(state.page_count.max(1) - 1);
+                        (start..=end).collect()
                     }
-                    if pages.len() == 1 && state.page_index > 0 {
-                        pages.insert(0, state.page_index - 1);
+                    LayoutMode::TwoPage => {
+                        let mut pages = vec![state.page_index];
+                        if state.page_count > 0 && state.page_index + 1 < state.page_count {
+                            pages.push(state.page_index + 1);
+                        }
+                        if pages.len() == 1 && state.page_index > 0 {
+                            pages.insert(0, state.page_index - 1);
+                        }
+                        pages
                     }
-                    pages
                 }
             };
             for page_index in pages {
@@ -499,29 +525,53 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
         if !page_surfaces.is_empty() {
             let total_pages = page_surfaces.len();
             let mut offset_y = 16.0;
-            let initial_state = draw_controller.state.borrow();
-            let layout_mode = initial_state.layout_mode;
-            drop(initial_state);
 
             for (index, (page_index, surface)) in page_surfaces.into_iter().enumerate() {
                 let width_for_surface = f64::from(surface.width());
                 let height_for_surface = f64::from(surface.height());
-                let x = match layout_mode {
-                    LayoutMode::TwoPage if total_pages > 1 => {
-                        let gutter = 24.0;
-                        let total_width = width_for_surface * 2.0 + gutter;
-                        let left_margin = (f64::from(width) - total_width) / 2.0;
-                        if index == 0 {
-                            left_margin
-                        } else {
-                            left_margin + width_for_surface + gutter
+                let x = if split_mode != SplitViewMode::Off && total_pages > 1 {
+                    match split_mode {
+                        SplitViewMode::Horizontal => {
+                            let gutter = 24.0;
+                            let total_width = width_for_surface * 2.0 + gutter;
+                            let left_margin = (f64::from(width) - total_width) / 2.0;
+                            if index == 0 {
+                                left_margin
+                            } else {
+                                left_margin + width_for_surface + gutter
+                            }
                         }
+                        SplitViewMode::Vertical | SplitViewMode::Off => (f64::from(width) - width_for_surface) / 2.0,
                     }
-                    _ => (f64::from(width) - width_for_surface) / 2.0,
+                } else {
+                    match layout_mode {
+                        LayoutMode::TwoPage if total_pages > 1 => {
+                            let gutter = 24.0;
+                            let total_width = width_for_surface * 2.0 + gutter;
+                            let left_margin = (f64::from(width) - total_width) / 2.0;
+                            if index == 0 {
+                                left_margin
+                            } else {
+                                left_margin + width_for_surface + gutter
+                            }
+                        }
+                        _ => (f64::from(width) - width_for_surface) / 2.0,
+                    }
                 };
-                let y = match layout_mode {
-                    LayoutMode::Continuous => offset_y,
-                    _ => (f64::from(height) - height_for_surface) / 2.0,
+                let y = if split_mode == SplitViewMode::Vertical && total_pages > 1 {
+                    let gutter = 24.0;
+                    let total_height = height_for_surface * 2.0 + gutter;
+                    let top_margin = (f64::from(height) - total_height) / 2.0;
+                    if index == 0 {
+                        top_margin
+                    } else {
+                        top_margin + height_for_surface + gutter
+                    }
+                } else {
+                    match layout_mode {
+                        LayoutMode::Continuous => offset_y,
+                        _ => (f64::from(height) - height_for_surface) / 2.0,
+                    }
                 };
                 if context.set_source_surface(&surface, x, y).is_ok() {
                     let _ = context.paint();

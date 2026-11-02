@@ -2,6 +2,7 @@ use gtk4::prelude::*;
 
 use crate::app::ViewerController;
 use crate::session::toggle_favorite_document;
+use crate::viewer_state::SplitViewMode;
 
 pub(crate) enum UiCommand {
     FocusSearch,
@@ -10,6 +11,10 @@ pub(crate) enum UiCommand {
     ShowAbout,
     ToggleFullscreen,
     TogglePresentation,
+    ToggleSplitViewHorizontal,
+    ToggleSplitViewVertical,
+    CloseSplitView,
+    ToggleSplitSync,
     ShowDocumentProperties,
     ShowTabsHint,
 }
@@ -60,6 +65,48 @@ pub(crate) fn dispatch_ui_command(
         }
         UiCommand::TogglePresentation => {
             controller.toggle_presentation_mode();
+        }
+        UiCommand::ToggleSplitViewHorizontal => {
+            let mut state = controller.state.borrow_mut();
+            state.split_mode = SplitViewMode::Horizontal;
+            let max_index = state.page_count.max(1) - 1;
+            state.split_secondary_page_index = if state.page_count > 0 {
+                (state.page_index + 1).clamp(0, max_index)
+            } else {
+                0
+            };
+            drop(state);
+            controller.area.queue_draw();
+        }
+        UiCommand::ToggleSplitViewVertical => {
+            let mut state = controller.state.borrow_mut();
+            state.split_mode = SplitViewMode::Vertical;
+            let max_index = state.page_count.max(1) - 1;
+            state.split_secondary_page_index = if state.page_count > 0 {
+                (state.page_index + 1).clamp(0, max_index)
+            } else {
+                0
+            };
+            drop(state);
+            controller.area.queue_draw();
+        }
+        UiCommand::CloseSplitView => {
+            let mut state = controller.state.borrow_mut();
+            state.split_mode = SplitViewMode::Off;
+            state.split_secondary_page_index = state.page_index;
+            drop(state);
+            controller.area.queue_draw();
+        }
+        UiCommand::ToggleSplitSync => {
+            let mut state = controller.state.borrow_mut();
+            state.split_sync = !state.split_sync;
+            if state.split_sync {
+                state.sync_split_view_to_primary();
+            }
+            let mode_message = if state.split_sync { "sincronizado" } else { "desacoplado" };
+            controller.status.set_text(&format!("Divisao de visualizacao {mode_message}."));
+            drop(state);
+            controller.area.queue_draw();
         }
         UiCommand::ShowDocumentProperties => {
             controller.show_document_properties();
