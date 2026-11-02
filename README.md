@@ -8,7 +8,7 @@ The project's primary goal is to reproduce the core functionality and user exper
 
 Performance is a fundamental requirement. gpdfview is being designed to provide fast document opening, responsive navigation, efficient rendering and reliable printing, including when working with large PDF documents containing hundreds or thousands of pages.
 
-> **Project status:** Planning and architectural design. Features described in this README represent project goals and are not necessarily implemented yet.
+> **Project status:** Early prototype. The current build opens a PDF, renders pages on a dedicated Poppler worker, supports page navigation and zoom, uses a byte-bounded page cache with adjacent-page prefetch, and submits printing through CUPS with a page-by-page Cairo fallback. This is the first milestone, not qpdfview feature parity. Unit tests cover rendering, request coalescing, memory bounds and print-PDF generation; comparative qpdfview benchmarks and physical print validation remain pending.
 
 ---
 
@@ -333,12 +333,13 @@ The following list describes the intended feature set.
 
 ### Essential features — P0
 
-- [ ] Open PDF documents.
+- [x] Open PDF documents.
 - [ ] Open multiple documents.
 - [ ] Tabbed document interface.
-- [ ] Page navigation.
-- [ ] Zoom controls.
-- [ ] Fit page and fit width.
+- [x] Page navigation.
+- [x] Zoom controls.
+- [ ] Fit page.
+- [x] Fit width.
 - [ ] Continuous scrolling.
 - [ ] Single-page layout.
 - [ ] Two-page layout.
@@ -347,7 +348,7 @@ The following list describes the intended feature set.
 - [ ] Search result highlighting.
 - [ ] Document thumbnails.
 - [ ] Document outline and bookmarks.
-- [ ] PDF printing.
+- [x] PDF printing.
 - [ ] Basic session restoration.
 
 ### Advanced features — P1
@@ -372,13 +373,17 @@ The following list describes the intended feature set.
 
 Feature availability will depend on the capabilities of the selected backend and the results of implementation and compatibility testing.
 
+The current prototype handles one local PDF at a time and prints to the default CUPS destination. The local CUPS filter chain was exercised without submitting a job; output from a physical printer and comparative qpdfview measurements are still to be verified.
+
 ---
 
 ## User Interface
 
 The interface will retain the familiar workflow of qpdfview while adopting GTK4 and libadwaita.
 
-Planned layout:
+The first prototype currently provides an open action, page navigation, zoom controls, fit-to-width, a central page view and a status area. Tabs, the sidebar and the remaining controls are planned for later milestones.
+
+Long-term layout:
 
 - Header bar with document tabs and window controls.
 - Toolbar with navigation, zoom, search and printing.
@@ -395,7 +400,7 @@ A modern appearance must not come at the expense of functionality.
 
 ## Project Structure
 
-The planned source tree is:
+Current first-milestone source tree:
 
 ```text
 gpdfview/
@@ -403,70 +408,16 @@ gpdfview/
 ├── Cargo.lock
 ├── README.md
 ├── LICENSE
-│
 ├── src/
 │   ├── main.rs
-│   ├── application.rs
-│   ├── window.rs
-│   │
-│   ├── document/
-│   │   ├── mod.rs
-│   │   ├── pdf_document.rs
-│   │   ├── metadata.rs
-│   │   ├── permissions.rs
-│   │   └── session.rs
-│   │
-│   ├── engine/
-│   │   ├── mod.rs
-│   │   ├── poppler.rs
-│   │   ├── renderer.rs
-│   │   ├── text_search.rs
-│   │   ├── thumbnails.rs
-│   │   └── outline.rs
-│   │
-│   ├── viewer/
-│   │   ├── mod.rs
-│   │   ├── pdf_view.rs
-│   │   ├── page_layout.rs
-│   │   ├── zoom.rs
-│   │   ├── navigation.rs
-│   │   └── cache.rs
-│   │
-│   ├── printing/
-│   │   ├── mod.rs
-│   │   ├── cups.rs
-│   │   ├── print_job.rs
-│   │   └── print_settings.rs
-│   │
-│   ├── ui/
-│   │   ├── headerbar.rs
-│   │   ├── toolbar.rs
-│   │   ├── sidebar.rs
-│   │   ├── tabs.rs
-│   │   ├── search_bar.rs
-│   │   └── dialogs.rs
-│   │
-│   ├── config/
-│   │   ├── mod.rs
-│   │   ├── settings.rs
-│   │   └── database.rs
-│   │
-│   └── utils/
-│       ├── shortcuts.rs
-│       └── logging.rs
-│
-├── data/
-│   ├── icons/
-│   ├── ui/
-│   └── gpdfview.desktop
-│
-└── tests/
-    ├── performance/
-    ├── printing/
-    └── documents/
+│   ├── app.rs
+│   ├── engine.rs
+│   ├── cache.rs
+│   └── printing.rs
+└── tests embedded alongside the Rust modules
 ```
 
-This structure is a starting point and may evolve as the implementation progresses.
+The modules deliberately keep GTK state on the main thread, with Poppler document access isolated to its worker.
 
 ---
 
@@ -489,7 +440,7 @@ Development will be divided into eight phases.
 
 This is an initial engineering estimate, not a delivery commitment. Actual duration will depend on the source-code analysis, backend capabilities and compatibility requirements.
 
-### First development milestone
+### First development milestone — in progress
 
 The first milestone should be a working prototype capable of:
 
@@ -547,7 +498,7 @@ Absolute performance targets should be defined after measuring the reference app
 
 ## Build Requirements
 
-The planned development environment requires:
+The development environment requires:
 
 - Rust toolchain and Cargo.
 - GTK4 development libraries.
@@ -575,19 +526,24 @@ Additional development packages may be required depending on the selected Rust b
 
 ### Build
 
-Once the project implementation and Cargo manifest are available:
-
 ```bash
-cargo build --release
+cargo build
 ```
 
-### Run
+Run the app:
 
 ```bash
-cargo run --release
+cargo run
 ```
 
-These commands describe the intended workflow; they do not imply that a complete buildable implementation is already available.
+Run the unit and PDF integration tests:
+
+```bash
+cargo test
+cargo clippy --all-targets -- -D warnings
+```
+
+The application currently needs Rust 1.92 or newer, GTK4 4.10 or newer, libadwaita 1.4 or newer, Poppler GLib 26.1 or newer, Cairo, and a CUPS `lp` client for printing. Native package names vary by distribution; Arch Linux/BigLinux provide the dependencies as `gtk4`, `libadwaita`, `poppler-glib`, `cairo`, and `cups`.
 
 ---
 
