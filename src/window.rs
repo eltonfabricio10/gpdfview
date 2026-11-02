@@ -36,6 +36,42 @@ pub(crate) struct DocumentControllerParams<'a> {
     pub print_button: gtk::Button,
 }
 
+fn create_menu_button(label: &str) -> (gtk::MenuButton, gtk::Box) {
+    let button = gtk::MenuButton::new();
+    button.set_label(label);
+    button.set_has_frame(false);
+
+    let menu_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    menu_box.set_margin_start(6);
+    menu_box.set_margin_end(6);
+    menu_box.set_margin_top(6);
+    menu_box.set_margin_bottom(6);
+
+    let popover = gtk::Popover::new();
+    popover.set_child(Some(&menu_box));
+    button.set_popover(Some(&popover));
+
+    (button, menu_box)
+}
+
+fn append_menu_item<F>(menu_box: &gtk::Box, label: &str, on_click: F) -> gtk::Button
+where
+    F: Fn() + 'static,
+{
+    let item = gtk::Button::with_label(label);
+    item.set_halign(gtk::Align::Fill);
+    item.set_hexpand(true);
+    item.set_has_frame(false);
+    item.add_css_class("flat");
+    item.connect_clicked(move |_| on_click());
+    menu_box.append(&item);
+    item
+}
+
+fn append_menu_separator(menu_box: &gtk::Box) {
+    menu_box.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
+}
+
 pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     let (renderer, printer) = match crate::app::new_worker_pair() {
         Ok(pair) => pair,
@@ -66,18 +102,12 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     menu_bar.set_margin_end(8);
     menu_bar.set_margin_top(4);
     menu_bar.set_margin_bottom(4);
-    let menu_file = gtk::Button::with_label("Arquivo");
-    menu_file.set_has_frame(false);
-    let menu_edit = gtk::Button::with_label("Editar");
-    menu_edit.set_has_frame(false);
-    let menu_view = gtk::Button::with_label("Exibir");
-    menu_view.set_has_frame(false);
-    let menu_tabs = gtk::Button::with_label("Abas");
-    menu_tabs.set_has_frame(false);
-    let menu_bookmarks = gtk::Button::with_label("Marcadores");
-    menu_bookmarks.set_has_frame(false);
-    let menu_help = gtk::Button::with_label("Ajuda");
-    menu_help.set_has_frame(false);
+    let (menu_file, file_menu_box) = create_menu_button("Arquivo");
+    let (menu_edit, edit_menu_box) = create_menu_button("Editar");
+    let (menu_view, view_menu_box) = create_menu_button("Exibir");
+    let (menu_tabs, tabs_menu_box) = create_menu_button("Abas");
+    let (menu_bookmarks, bookmarks_menu_box) = create_menu_button("Marcadores");
+    let (menu_help, help_menu_box) = create_menu_button("Ajuda");
     menu_bar.append(&menu_file);
     menu_bar.append(&menu_edit);
     menu_bar.append(&menu_view);
@@ -162,7 +192,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     let menu_open_app = open_app.clone();
     let menu_open_window = open_window.clone();
     let menu_last_directory = last_directory.clone();
-    menu_file.connect_clicked(move |_| {
+    let file_open_item = append_menu_item(&file_menu_box, "Abrir PDF...", move || {
         show_open_dialog(
             menu_open_app.clone(),
             menu_open_window.clone(),
@@ -171,32 +201,88 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
             menu_last_directory.clone(),
         );
     });
-
-    let menu_tabs_controller = initial.clone();
-    menu_tabs.connect_clicked(move |_| {
-        dispatch_ui_command(&menu_tabs_controller, UiCommand::ShowTabsHint, None);
+    let menu_print_controller = initial.clone();
+    let file_print_item = append_menu_item(&file_menu_box, "Imprimir", move || {
+        menu_print_controller.submit_print();
+    });
+    let menu_props_controller = initial.clone();
+    let file_properties_item = append_menu_item(&file_menu_box, "Propriedades", move || {
+        dispatch_ui_command(&menu_props_controller, UiCommand::ShowDocumentProperties, None);
+    });
+    append_menu_separator(&file_menu_box);
+    let menu_about_from_file = initial.clone();
+    let _file_about_item = append_menu_item(&file_menu_box, "Sobre", move || {
+        dispatch_ui_command(&menu_about_from_file, UiCommand::ShowAbout, None);
     });
 
     let menu_search_controller = initial.clone();
-    menu_edit.connect_clicked(move |_| {
+    let edit_focus_item = append_menu_item(&edit_menu_box, "Focar busca", move || {
         dispatch_ui_command(&menu_search_controller, UiCommand::FocusSearch, None);
+    });
+    let edit_next_controller = initial.clone();
+    let edit_next_match_item = append_menu_item(&edit_menu_box, "Proximo resultado", move || {
+        edit_next_controller.search_next_match();
+    });
+    let edit_prev_controller = initial.clone();
+    let edit_prev_match_item = append_menu_item(&edit_menu_box, "Resultado anterior", move || {
+        edit_prev_controller.search_previous_match();
     });
 
     let menu_sidebar = sidebar.clone();
     let menu_sidebar_controller = initial.clone();
-    menu_view.connect_clicked(move |_| {
+    let view_sidebar_item = append_menu_item(&view_menu_box, "Alternar painel lateral", move || {
         dispatch_ui_command(&menu_sidebar_controller, UiCommand::ToggleSidebar, Some(&menu_sidebar));
+    });
+    let view_fullscreen_controller = initial.clone();
+    let view_fullscreen_item = append_menu_item(&view_menu_box, "Tela cheia", move || {
+        dispatch_ui_command(&view_fullscreen_controller, UiCommand::ToggleFullscreen, None);
+    });
+    let view_presentation_controller = initial.clone();
+    let view_presentation_item = append_menu_item(&view_menu_box, "Modo apresentacao", move || {
+        dispatch_ui_command(&view_presentation_controller, UiCommand::TogglePresentation, None);
+    });
+
+    let menu_tabs_controller = initial.clone();
+    let tabs_hint_item = append_menu_item(&tabs_menu_box, "Gerenciar abas", move || {
+        dispatch_ui_command(&menu_tabs_controller, UiCommand::ShowTabsHint, None);
     });
 
     let menu_favorite_controller = initial.clone();
-    menu_bookmarks.connect_clicked(move |_| {
+    let bookmarks_toggle_item = append_menu_item(&bookmarks_menu_box, "Alternar favorito", move || {
         dispatch_ui_command(&menu_favorite_controller, UiCommand::ToggleFavoriteDocument, None);
     });
 
     let menu_about_controller = initial.clone();
-    menu_help.connect_clicked(move |_| {
+    let help_about_item = append_menu_item(&help_menu_box, "Sobre", move || {
         dispatch_ui_command(&menu_about_controller, UiCommand::ShowAbout, None);
     });
+
+    // Keep references alive and update sensitivity based on document availability.
+    let _always_enabled_items = [
+        file_open_item,
+        edit_focus_item,
+        view_sidebar_item,
+        view_fullscreen_item,
+        tabs_hint_item,
+        help_about_item,
+    ];
+    let doc_sensitive_items = vec![
+        file_print_item,
+        file_properties_item,
+        edit_next_match_item,
+        edit_prev_match_item,
+        view_presentation_item,
+        bookmarks_toggle_item,
+    ];
+    let sensitivity_controller = initial.clone();
+    let refresh_sensitivity = move || {
+        let has_document = sensitivity_controller.state.borrow().path.is_some();
+        for item in &doc_sensitive_items {
+            item.set_sensitive(has_document);
+        }
+    };
+    refresh_sensitivity();
+    initial.subscribe_state_changes(refresh_sensitivity);
 
     let fullscreen_controller = initial.clone();
     fullscreen_button.connect_clicked(move |_| {
