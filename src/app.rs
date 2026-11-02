@@ -1,4 +1,5 @@
 use crate::cache::LruCache;
+use crate::document_tabs::DocumentTabManager;
 use crate::engine::{PdfRenderer, RenderError, RenderResult, RenderedPage};
 use crate::printing::PrintService;
 use crate::viewer_state::{
@@ -687,32 +688,6 @@ mod tests {
     }
 
     #[test]
-    fn document_tab_manager_tracks_multiple_documents() {
-        let manager = DocumentTabManager::new_model();
-        manager.record_tab("Alpha");
-        manager.record_tab("Beta");
-
-        assert_eq!(manager.tab_count(), 2);
-        assert_eq!(manager.current_title(), Some("Beta".to_string()));
-    }
-
-    #[test]
-    fn tab_label_has_a_title_and_close_button_capacity() {
-        let manager = DocumentTabManager::new_model();
-        manager.record_tab("Alpha");
-        let titles = manager.titles.borrow();
-        assert_eq!(titles.len(), 1);
-        assert_eq!(titles[0], "Alpha");
-    }
-
-    #[test]
-    fn tab_visibility_uses_the_count_of_visible_pages() {
-        assert!(should_show_tabs(1));
-        assert!(should_show_tabs(2));
-        assert!(!should_show_tabs(0));
-    }
-
-    #[test]
     fn key_shortcuts_map_to_navigation_and_zoom_actions() {
         assert_eq!(resolve_key_action("PageDown", 0), Some(KeyAction::NextPage));
         assert_eq!(resolve_key_action("PageUp", 0), Some(KeyAction::PreviousPage));
@@ -854,100 +829,6 @@ fn action_button(icon_name: &str, tooltip: &str) -> gtk::Button {
     button.set_tooltip_text(Some(tooltip));
     button.set_has_frame(false);
     button
-}
-
-fn should_show_tabs(page_count: u32) -> bool {
-    page_count > 0
-}
-
-#[derive(Clone)]
-struct DocumentTabManager {
-    notebook: Option<gtk::Notebook>,
-    titles: Rc<RefCell<Vec<String>>>,
-}
-
-impl DocumentTabManager {
-    fn new(notebook: gtk::Notebook) -> Self {
-        Self {
-            notebook: Some(notebook),
-            titles: Rc::new(RefCell::new(Vec::new())),
-        }
-    }
-
-    #[cfg(test)]
-    fn new_model() -> Self {
-        Self {
-            notebook: None,
-            titles: Rc::new(RefCell::new(Vec::new())),
-        }
-    }
-
-    #[cfg(test)]
-    fn record_tab(&self, title: &str) {
-        self.titles.borrow_mut().push(title.to_string());
-    }
-
-    fn close_tab(&self, page: &gtk::Box) -> bool {
-        let Some(notebook) = self.notebook.clone() else {
-            return false;
-        };
-        if let Some(page_index) = notebook.page_num(page) {
-            notebook.remove_page(Some(page_index));
-            notebook.set_show_tabs(should_show_tabs(notebook.n_pages()));
-            return true;
-        }
-        false
-    }
-
-    fn add_tab(&self, page: &gtk::Box, title: &str) {
-        let label_box = gtk::Box::new(gtk::Orientation::Horizontal, 4);
-        label_box.set_halign(gtk::Align::Center);
-        label_box.set_valign(gtk::Align::Center);
-        label_box.set_margin_start(8);
-        label_box.set_margin_end(8);
-        label_box.set_margin_top(2);
-        label_box.set_margin_bottom(2);
-
-        let title_label = gtk::Label::new(Some(title));
-        title_label.set_margin_start(2);
-        title_label.set_margin_end(2);
-        label_box.append(&title_label);
-
-        let close_button = gtk::Button::builder()
-            .icon_name("window-close-symbolic")
-            .tooltip_text("Close tab")
-            .has_frame(false)
-            .focus_on_click(false)
-            .build();
-        close_button.set_size_request(16, 16);
-        close_button.set_margin_start(2);
-        close_button.set_margin_end(2);
-
-        if let Some(notebook) = self.notebook.clone() {
-            let page_widget = page.clone();
-            let closure_manager = self.clone();
-            close_button.connect_clicked(move |_| {
-                let _ = closure_manager.close_tab(&page_widget);
-            });
-            label_box.append(&close_button);
-
-            let index = notebook.append_page(page, Some(&label_box));
-            notebook.set_tab_reorderable(page, true);
-            notebook.set_current_page(Some(index));
-            notebook.set_show_tabs(should_show_tabs(notebook.n_pages()));
-        }
-        self.titles.borrow_mut().push(title.to_string());
-    }
-
-    #[cfg(test)]
-    fn tab_count(&self) -> usize {
-        self.titles.borrow().len()
-    }
-
-    #[cfg(test)]
-    fn current_title(&self) -> Option<String> {
-        self.titles.borrow().last().cloned()
-    }
 }
 
 pub fn run() {
