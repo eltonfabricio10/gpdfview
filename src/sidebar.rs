@@ -274,6 +274,46 @@ fn populate_outline_list(list: &gtk4::ListBox, controller: &ViewerController) {
     }
 }
 
+fn populate_search_results_list(list: &gtk4::ListBox, controller: &ViewerController) {
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
+
+    let state = controller.state.borrow();
+    if state.search_results.is_empty() {
+        let row = gtk4::ListBoxRow::new();
+        let label = gtk4::Label::new(Some("Sem resultados de busca no momento."));
+        label.set_xalign(0.0);
+        label.set_wrap(true);
+        label.set_margin_start(8);
+        label.set_margin_end(8);
+        label.set_margin_top(4);
+        label.set_margin_bottom(4);
+        row.set_child(Some(&label));
+        list.append(&row);
+        return;
+    }
+
+    let current = state.search_global_index;
+    let entries = state.search_results.clone();
+    drop(state);
+
+    for (index, entry) in entries.iter().enumerate() {
+        let row = gtk4::ListBoxRow::new();
+        let button = gtk4::Button::new();
+        button.set_halign(gtk4::Align::Fill);
+        button.set_hexpand(true);
+        let marker = if index == current { "▶ " } else { "" };
+        button.set_label(&format!("{}Pag {}", marker, entry.page_index + 1));
+        let result_controller = controller.clone();
+        button.connect_clicked(move |_| {
+            result_controller.focus_global_search_result(index);
+        });
+        row.set_child(Some(&button));
+        list.append(&row);
+    }
+}
+
 pub fn build_sidebar(
     app: &adw::Application,
     window: &adw::ApplicationWindow,
@@ -316,10 +356,12 @@ pub fn build_sidebar(
     section_toggle_row.set_margin_bottom(6);
     let mini_toggle = section_toggle("Mini", true);
     let outline_toggle = section_toggle("Marc", true);
+    let search_toggle = section_toggle("Busca", true);
     let recent_toggle = section_toggle("Rec", false);
     let favorites_toggle = section_toggle("Fav", false);
     section_toggle_row.append(&mini_toggle);
     section_toggle_row.append(&outline_toggle);
+    section_toggle_row.append(&search_toggle);
     section_toggle_row.append(&recent_toggle);
     section_toggle_row.append(&favorites_toggle);
     sidebar_root.append(&section_toggle_row);
@@ -384,6 +426,21 @@ pub fn build_sidebar(
     outline_expander.set_child(Some(&outline_section));
     sidebar.append(&outline_expander);
 
+    let search_list = gtk4::ListBox::new();
+    search_list.set_selection_mode(gtk4::SelectionMode::None);
+    search_list.set_css_classes(&["boxed-list"]);
+    populate_search_results_list(&search_list, &controller);
+    let search_section = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+    let search_title = gtk4::Label::new(Some("<b>Busca</b>"));
+    search_title.set_use_markup(true);
+    search_title.set_xalign(0.0);
+    search_section.append(&search_title);
+    search_section.append(&search_list);
+    let search_expander = gtk4::Expander::new(Some("Busca"));
+    search_expander.set_expanded(true);
+    search_expander.set_child(Some(&search_section));
+    sidebar.append(&search_expander);
+
     let recent_list = gtk4::ListBox::new();
     recent_list.set_selection_mode(gtk4::SelectionMode::Single);
     recent_list.set_css_classes(&["boxed-list"]);
@@ -443,6 +500,12 @@ pub fn build_sidebar(
         });
     }
     {
+        let search_expander = search_expander.clone();
+        search_toggle.connect_toggled(move |button| {
+            search_expander.set_visible(button.is_active());
+        });
+    }
+    {
         let recent_expander = recent_expander.clone();
         recent_toggle.connect_toggled(move |button| {
             recent_expander.set_visible(button.is_active());
@@ -455,11 +518,20 @@ pub fn build_sidebar(
         });
     }
 
-    let state_signature = Rc::new(RefCell::new((None::<PathBuf>, -1, -1, 0)));
+    let state_signature = Rc::new(RefCell::new((
+        None::<PathBuf>,
+        -1,
+        -1,
+        0,
+        String::new(),
+        0_usize,
+        0_usize,
+    )));
     let watch_controller = controller.clone();
     let watch_flow = pages_flow.clone();
     let watch_outline = outline_list.clone();
     let watch_cache = thumbnail_cache.clone();
+    let watch_search = search_list.clone();
     let watch_signature = state_signature.clone();
     controller.subscribe_state_changes(move || {
         let snapshot = {
@@ -469,6 +541,9 @@ pub fn build_sidebar(
                 state.page_index,
                 state.page_count,
                 state.rotation,
+                state.search_query.clone(),
+                state.search_results.len(),
+                state.search_global_index,
             )
         };
         let previous = watch_signature.borrow().clone();
@@ -479,6 +554,9 @@ pub fn build_sidebar(
         populate_pages_flow(&watch_flow, &watch_controller, &watch_cache);
         if snapshot.0 != previous.0 {
             populate_outline_list(&watch_outline, &watch_controller);
+        }
+        if snapshot.4 != previous.4 || snapshot.5 != previous.5 || snapshot.6 != previous.6 {
+            populate_search_results_list(&watch_search, &watch_controller);
         }
         *watch_signature.borrow_mut() = snapshot;
     });
