@@ -2,6 +2,13 @@ use crate::cache::LruCache;
 use crate::document_tabs::DocumentTabManager;
 use crate::engine::{PdfRenderer, RenderError, RenderResult, RenderedPage};
 use crate::printing::PrintService;
+use crate::session::{
+    is_favorite_document, last_directory_for_home, last_directory_for_home_path,
+    last_window_geometry_for_home, last_window_geometry_for_home_path, load_favorite_documents,
+    load_recent_documents, newest_valid_recent_document, normalize_recent_paths,
+    remember_last_directory, remember_last_directory_for_home, remember_recent_document,
+    remember_window_geometry, remember_window_geometry_for_home, toggle_favorite_document,
+};
 use crate::viewer_state::{
     apply_render_request, normalize_rotation, sanitize_scale, RenderKey, ViewerState,
     DEFAULT_ZOOM,
@@ -12,7 +19,6 @@ use gtk4 as gtk;
 use gtk4::cairo::{Format, ImageSurface};
 use gtk::{gio, glib};
 use std::cell::{Cell, RefCell};
-use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
@@ -883,91 +889,6 @@ fn new_worker_pair() -> Result<(Rc<PdfRenderer>, Rc<PrintService>), String> {
     Ok((renderer, printer))
 }
 
-fn session_storage_dir_for(home: &Path) -> PathBuf {
-    let storage = home.join(".local/share/gpdfview");
-    let _ = fs::create_dir_all(&storage);
-    storage
-}
-
-fn session_storage_dir() -> PathBuf {
-    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    session_storage_dir_for(Path::new(&home))
-}
-
-fn remember_window_geometry_for_home(home: &Path, width: i32, height: i32) {
-    let storage = session_storage_dir_for(home);
-    let file = storage.join("window_size.txt");
-    let _ = fs::write(file, format!("{width} {height}"));
-}
-
-fn remember_window_geometry(width: i32, height: i32) {
-    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    remember_window_geometry_for_home(Path::new(&home), width, height);
-}
-
-fn last_window_geometry_for_home(home: &Path) -> Option<(i32, i32)> {
-    let file = session_storage_dir_for(home).join("window_size.txt");
-    let content = fs::read_to_string(file).ok()?;
-    let mut parts = content.split_whitespace();
-    let width = parts.next()?.parse::<i32>().ok()?;
-    let height = parts.next()?.parse::<i32>().ok()?;
-    Some((width, height))
-}
-
-fn remember_last_directory_for_home(home: &Path, dir: &Path) {
-    let storage = session_storage_dir_for(home);
-    let _ = fs::create_dir_all(&storage);
-    let file = storage.join("last_dir.txt");
-    let trimmed = dir.to_string_lossy().trim().to_string();
-    if trimmed.is_empty() {
-        let _ = fs::remove_file(file);
-        return;
-    }
-    let _ = fs::write(file, trimmed);
-}
-
-fn remember_last_directory(dir: &Path) {
-    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    remember_last_directory_for_home(Path::new(&home), dir);
-}
-
-fn last_directory_for_home(home: &Path) -> Option<PathBuf> {
-    let file = session_storage_dir_for(home).join("last_dir.txt");
-    let content = fs::read_to_string(file).ok()?;
-    let trimmed = content.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    Some(PathBuf::from(trimmed))
-}
-
-fn last_directory_for_home_path() -> Option<PathBuf> {
-    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    last_directory_for_home(Path::new(&home))
-}
-
-fn last_window_geometry_for_home_path() -> Option<(i32, i32)> {
-    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
-    last_window_geometry_for_home(Path::new(&home))
-}
-
-fn write_session_entries(path: &Path, entries: &[PathBuf]) {
-    let _ = fs::create_dir_all(path.parent().unwrap_or(Path::new(".")));
-    let joined = entries
-        .iter()
-        .filter_map(|entry| {
-            let text = entry.to_string_lossy().to_string();
-            if text.trim().is_empty() {
-                None
-            } else {
-                Some(text)
-            }
-        })
-        .collect::<Vec<_>>()
-        .join("\n");
-    let _ = fs::write(path, format!("{joined}\n"));
-}
-
 fn selected_pdf_paths(model: &gio::ListModel) -> Vec<PathBuf> {
     let mut selected = Vec::new();
     for index in 0..model.n_items() {
@@ -1011,74 +932,6 @@ fn selected_pdf_paths_from_store(store: &gio::ListStore) -> Vec<PathBuf> {
         }
     }
     selected
-}
-
-fn read_session_entries(path: &Path) -> Vec<PathBuf> {
-    let Ok(content) = fs::read_to_string(path) else {
-        return Vec::new();
-    };
-    content
-        .lines()
-        .filter(|line| !line.trim().is_empty())
-        .map(PathBuf::from)
-        .collect()
-}
-
-fn normalize_recent_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
-    let mut seen = std::collections::HashSet::new();
-    let mut unique = Vec::new();
-    for path in paths.into_iter().rev() {
-        if seen.insert(path.clone()) {
-            unique.push(path);
-        }
-    }
-    unique.reverse();
-    unique
-}
-
-fn remember_recent_document(path: &Path) {
-    let file = session_storage_dir().join("recent.txt");
-    let mut docs = read_session_entries(&file);
-    docs.insert(0, path.to_path_buf());
-    let normalized = normalize_recent_paths(docs);
-    write_session_entries(&file, &normalized[..normalized.len().min(8)]);
-}
-
-fn newest_valid_recent_document(paths: &[PathBuf]) -> Option<PathBuf> {
-    paths
-        .iter()
-        .find(|path| path.exists())
-        .cloned()
-}
-
-fn load_recent_documents() -> Vec<PathBuf> {
-    let file = session_storage_dir().join("recent.txt");
-    let docs = read_session_entries(&file);
-    normalize_recent_paths(docs)
-}
-
-#[allow(dead_code)]
-fn toggle_favorite_document(path: &Path) -> bool {
-    let file = session_storage_dir().join("favorites.txt");
-    let mut favorites = read_session_entries(&file);
-    if let Some(index) = favorites.iter().position(|entry| entry == path) {
-        favorites.remove(index);
-        write_session_entries(&file, &favorites);
-        return false;
-    }
-    favorites.insert(0, path.to_path_buf());
-    let deduped = normalize_recent_paths(favorites);
-    write_session_entries(&file, &deduped[..deduped.len().min(12)]);
-    true
-}
-
-fn load_favorite_documents() -> Vec<PathBuf> {
-    let file = session_storage_dir().join("favorites.txt");
-    normalize_recent_paths(read_session_entries(&file))
-}
-
-fn is_favorite_document(path: &Path) -> bool {
-    load_favorite_documents().iter().any(|favorite| favorite == path)
 }
 
 fn open_document_in_new_tab(

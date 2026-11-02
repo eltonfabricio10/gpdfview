@@ -4,6 +4,7 @@ mod document_tabs;
 mod engine;
 mod poppler_lock;
 mod printing;
+mod session;
 mod viewer_state;
 
 fn main() {
