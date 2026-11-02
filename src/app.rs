@@ -40,6 +40,38 @@ fn normalize_rotation(rotation: i32) -> i32 {
     if normalized == 360 { 0 } else { normalized }
 }
 
+fn sanitize_scale(scale: f64) -> f64 {
+    if scale.is_finite() {
+        scale.clamp(0.1, 4.0)
+    } else {
+        DEFAULT_ZOOM
+    }
+}
+
+fn apply_render_request(
+    state: &mut ViewerState,
+    path: Option<PathBuf>,
+    page_index: i32,
+    scale: f64,
+    rotation: i32,
+) -> Option<(PathBuf, i32, f64, i32)> {
+    let path = path?;
+    let normalized_scale = sanitize_scale(scale);
+    let normalized_rotation = normalize_rotation(rotation);
+    let normalized_page_index = if state.page_count == 0 {
+        0
+    } else {
+        page_index.clamp(0, state.page_count - 1)
+    };
+
+    state.page_index = normalized_page_index;
+    state.scale = normalized_scale;
+    state.rotation = normalized_rotation;
+    state.search_highlights.clear();
+
+    Some((path, normalized_page_index, normalized_scale, normalized_rotation))
+}
+
 #[cfg(test)]
 fn rotated_page_dimensions(width_points: f64, height_points: f64, rotation: i32) -> (f64, f64) {
     match normalize_rotation(rotation) {
@@ -264,17 +296,28 @@ impl ViewerController {
     }
 
     fn navigate_to(&self, page_index: i32) {
-        let (page_index, path, scale, rotation) = {
+        let (path, page_index, scale, rotation) = {
             let mut state = self.state.borrow_mut();
             if state.page_count == 0 {
                 return;
             }
-            state.page_index = page_index.clamp(0, state.page_count - 1);
-            (state.page_index, state.path.clone(), state.scale, state.rotation)
+            let path = state.path.clone();
+            let current_scale = state.scale;
+            let current_rotation = state.rotation;
+            let target = page_index.clamp(0, state.page_count - 1);
+            let render_context = apply_render_request(
+                &mut state,
+                path,
+                target,
+                current_scale,
+                current_rotation,
+            );
+            match render_context {
+                Some((path, page_index, scale, rotation)) => (path, page_index, scale, rotation),
+                None => return,
+            }
         };
-        if let Some(path) = path {
-            self.request_render(path, page_index, scale, rotation);
-        }
+        self.request_render(path, page_index, scale, rotation);
     }
 
     fn change_zoom(&self, delta: f64) {
@@ -283,26 +326,48 @@ impl ViewerController {
             if state.page_count == 0 {
                 return;
             }
-            state.scale = (state.scale + delta).clamp(0.1, 4.0);
-            (state.path.clone(), state.page_index, state.scale, state.rotation)
+            let path = state.path.clone();
+            let current_page = state.page_index;
+            let current_rotation = state.rotation;
+            let next_scale = sanitize_scale(state.scale + delta);
+            let render_context = apply_render_request(
+                &mut state,
+                path,
+                current_page,
+                next_scale,
+                current_rotation,
+            );
+            match render_context {
+                Some((path, page_index, scale, rotation)) => (path, page_index, scale, rotation),
+                None => return,
+            }
         };
-        if let Some(path) = path {
-            self.request_render(path, page_index, scale, rotation);
-        }
+        self.request_render(path, page_index, scale, rotation);
     }
 
     fn rotate_page(&self, delta: i32) {
         let (path, page_index, scale, rotation) = {
             let mut state = self.state.borrow_mut();
-            let Some(_) = state.path.clone() else {
-                return;
+            let path = match state.path.clone() {
+                Some(path) => path,
+                None => return,
             };
-            state.rotation = normalize_rotation(state.rotation + delta);
-            (state.path.clone(), state.page_index, state.scale, state.rotation)
+            let current_page = state.page_index;
+            let current_scale = state.scale;
+            let current_rotation = state.rotation;
+            let render_context = apply_render_request(
+                &mut state,
+                Some(path),
+                current_page,
+                current_scale,
+                current_rotation + delta,
+            );
+            match render_context {
+                Some((path, page_index, scale, rotation)) => (path, page_index, scale, rotation),
+                None => return,
+            }
         };
-        if let Some(path) = path {
-            self.request_render(path, page_index, scale, rotation);
-        }
+        self.request_render(path, page_index, scale, rotation);
     }
 
     fn fit_width(&self) {
@@ -312,12 +377,23 @@ impl ViewerController {
             if state.page_width_points <= 0.0 {
                 return;
             }
-            state.scale = compute_fit_width_scale(state.page_width_points, width);
-            (state.path.clone(), state.page_index, state.scale, state.rotation)
+            let path = state.path.clone();
+            let current_page = state.page_index;
+            let current_rotation = state.rotation;
+            let next_scale = compute_fit_width_scale(state.page_width_points, width);
+            let render_context = apply_render_request(
+                &mut state,
+                path,
+                current_page,
+                next_scale,
+                current_rotation,
+            );
+            match render_context {
+                Some((path, page_index, scale, rotation)) => (path, page_index, scale, rotation),
+                None => return,
+            }
         };
-        if let Some(path) = path {
-            self.request_render(path, page_index, scale, rotation);
-        }
+        self.request_render(path, page_index, scale, rotation);
     }
 
     fn fit_page(&self) {
@@ -328,32 +404,49 @@ impl ViewerController {
             if state.page_width_points <= 0.0 || state.page_height_points <= 0.0 {
                 return;
             }
-            state.scale = compute_fit_page_scale(
+            let path = state.path.clone();
+            let current_page = state.page_index;
+            let current_rotation = state.rotation;
+            let next_scale = compute_fit_page_scale(
                 state.page_width_points,
                 state.page_height_points,
                 viewport_width,
                 viewport_height,
             );
-            (state.path.clone(), state.page_index, state.scale, state.rotation)
+            let render_context = apply_render_request(
+                &mut state,
+                path,
+                current_page,
+                next_scale,
+                current_rotation,
+            );
+            match render_context {
+                Some((path, page_index, scale, rotation)) => (path, page_index, scale, rotation),
+                None => return,
+            }
         };
-        if let Some(path) = path {
-            self.request_render(path, page_index, scale, rotation);
-        }
+        self.request_render(path, page_index, scale, rotation);
     }
 
     fn request_render(&self, path: PathBuf, page_index: i32, scale: f64, rotation: i32) {
-        let scale = if scale.is_finite() {
-            scale.clamp(0.1, 4.0)
-        } else {
-            DEFAULT_ZOOM
-        };
-        {
+        let (page_index, scale, rotation) = {
             let mut state = self.state.borrow_mut();
-            state.page_index = page_index;
-            state.scale = scale;
-            state.rotation = normalize_rotation(rotation);
-            state.search_highlights.clear();
-        }
+            let request_path = path.clone();
+            let requested_page = page_index;
+            let requested_scale = scale;
+            let requested_rotation = rotation;
+            let render_context = apply_render_request(
+                &mut state,
+                Some(request_path),
+                requested_page,
+                requested_scale,
+                requested_rotation,
+            );
+            let Some((_, page_index, scale, rotation)) = render_context else {
+                return;
+            };
+            (page_index, scale, rotation)
+        };
 
         let key = RenderKey::new(path.clone(), page_index, scale, rotation);
         let generation = self.renderer.invalidate();
@@ -707,6 +800,31 @@ mod tests {
             resolve_key_action("o", gtk::gdk::ModifierType::CONTROL_MASK.bits()),
             Some(KeyAction::OpenFile)
         );
+    }
+
+    #[test]
+    fn render_request_state_clamps_scale_and_normalizes_rotation() {
+        let mut state = ViewerState::default();
+        state.page_count = 10;
+        state.page_index = 1;
+        state.scale = 0.05;
+        state.rotation = 270;
+
+        let result = apply_render_request(
+            &mut state,
+            Some(PathBuf::from("/tmp/example.pdf")),
+            8,
+            5.2,
+            450,
+        );
+
+        assert_eq!(
+            result,
+            Some((PathBuf::from("/tmp/example.pdf"), 8, 4.0, 90))
+        );
+        assert_eq!(state.page_index, 8);
+        assert_eq!(state.scale, 4.0);
+        assert_eq!(state.rotation, 90);
     }
 
     #[test]
