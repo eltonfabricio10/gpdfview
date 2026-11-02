@@ -8,7 +8,7 @@ use crate::navigation::{
 };
 use crate::printing::{PrintOptions, PrintOrientation, PrintService};
 use crate::rendering::{poll, present_page, request_render, schedule_prefetch, search_current_page};
-use crate::session::load_document_view;
+use crate::session::{load_app_settings, load_document_view};
 #[cfg(test)]
 use crate::session::{
     last_directory_for_home, last_window_geometry_for_home, newest_valid_recent_document,
@@ -212,6 +212,12 @@ impl ViewerController {
                 self.show_status(&format!("Could not read PDF properties: {error}"));
             }
         }
+    }
+
+    pub(crate) fn show_settings_dialog(&self) {
+        let settings = load_app_settings();
+        let dialog = crate::dialogs::build_settings_dialog(&self.window, settings, self.clone());
+        dialog.present();
     }
 
     pub(crate) fn show_error(&self, error: RenderError) {

@@ -13,7 +13,7 @@ use crate::app::ViewerController;
 use crate::cache::LruCache;
 use crate::document_actions::{open_document_in_new_tab, show_open_dialog};
 use crate::document_tabs::DocumentTabManager;
-use crate::keyboard::{resolve_key_action, KeyAction};
+use crate::keyboard::KeyAction;
 use crate::layout::cairo_search_highlight_rects;
 use crate::printing::PrintService;
 use crate::session::{
@@ -296,6 +296,10 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         dispatch_ui_command(&menu_page_bookmark_controller, UiCommand::ToggleCurrentPageBookmark, None);
     });
 
+    let menu_settings_controller = initial.clone();
+    let help_settings_item = append_menu_item(&help_menu_box, "Configurações", move || {
+        dispatch_ui_command(&menu_settings_controller, UiCommand::OpenSettingsDialog, None);
+    });
     let menu_about_controller = initial.clone();
     let help_about_item = append_menu_item(&help_menu_box, "Sobre", move || {
         dispatch_ui_command(&menu_about_controller, UiCommand::ShowAbout, None);
@@ -308,6 +312,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         view_sidebar_item,
         view_fullscreen_item,
         tabs_hint_item,
+        help_settings_item,
         help_about_item,
     ];
     let doc_sensitive_items = vec![
@@ -629,7 +634,8 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
     let open_tab_manager = tab_manager.clone();
     input_controller.connect_key_pressed(move |_, keyval, _, state| {
         let key_name = keyval.name().unwrap_or_default();
-        let action = resolve_key_action(&key_name, state.bits());
+        let settings = crate::session::load_app_settings();
+        let action = crate::keyboard::resolve_key_action_with_settings(&key_name, state.bits(), &settings);
         if let Some(KeyAction::OpenFile) = action {
             show_open_dialog(
                 open_app.clone(),

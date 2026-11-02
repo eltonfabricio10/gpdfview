@@ -4,6 +4,110 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct AppSettings {
+    pub default_layout: String,
+    pub split_sync: bool,
+    pub zoom_step: f64,
+    pub shortcuts: HashMap<String, String>,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            default_layout: "single".to_string(),
+            split_sync: true,
+            zoom_step: 0.1,
+            shortcuts: default_shortcuts(),
+        }
+    }
+}
+
+pub fn default_shortcuts() -> HashMap<String, String> {
+    HashMap::from([
+        ("open_file".to_string(), "Ctrl+O".to_string()),
+        ("focus_search".to_string(), "Ctrl+F".to_string()),
+        ("toggle_fullscreen".to_string(), "F11".to_string()),
+        ("toggle_presentation".to_string(), "F5".to_string()),
+        ("next_page".to_string(), "PageDown".to_string()),
+        ("previous_page".to_string(), "PageUp".to_string()),
+        ("zoom_in".to_string(), "Plus".to_string()),
+        ("zoom_out".to_string(), "Minus".to_string()),
+        ("fit_width".to_string(), "F".to_string()),
+        ("fit_page".to_string(), "G".to_string()),
+        ("rotate_left".to_string(), "L".to_string()),
+        ("rotate_right".to_string(), "R".to_string()),
+    ])
+}
+
+pub fn settings_file_for_home(home: &Path) -> PathBuf {
+    session_storage_dir_for(home).join("app_settings.txt")
+}
+
+pub fn save_app_settings_for_home(home: &Path, settings: &AppSettings) {
+    let mut lines = vec![
+        format!("default_layout={}", settings.default_layout),
+        format!("split_sync={}", settings.split_sync),
+        format!("zoom_step={}", settings.zoom_step),
+    ];
+    let mut shortcuts = settings.shortcuts.clone();
+    for (action, value) in shortcuts.iter_mut() {
+        let normalized = value.trim();
+        if normalized.is_empty() {
+            *value = default_shortcuts().get(action).cloned().unwrap_or_default();
+        }
+    }
+    for (action, value) in shortcuts.iter() {
+        lines.push(format!("shortcut:{action}={value}"));
+    }
+    let _ = fs::write(settings_file_for_home(home), lines.join("\n"));
+}
+
+pub fn load_app_settings_for_home(home: &Path) -> AppSettings {
+    let file = settings_file_for_home(home);
+    let defaults = AppSettings::default();
+    let Ok(content) = fs::read_to_string(file) else {
+        return defaults;
+    };
+
+    let mut settings = defaults.clone();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let mut parts = trimmed.splitn(2, '=');
+        let Some(key) = parts.next() else {
+            continue;
+        };
+        let Some(value) = parts.next() else {
+            continue;
+        };
+        match key {
+            "default_layout" => settings.default_layout = value.to_string(),
+            "split_sync" => settings.split_sync = value.eq_ignore_ascii_case("true"),
+            "zoom_step" => {
+                if let Ok(parsed) = value.parse::<f64>() {
+                    settings.zoom_step = parsed;
+                }
+            }
+            _ if key.starts_with("shortcut:") => {
+                let action = key.trim_start_matches("shortcut:");
+                if !action.is_empty() {
+                    settings.shortcuts.insert(action.to_string(), value.to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    settings
+}
+
+pub fn load_app_settings() -> AppSettings {
+    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    load_app_settings_for_home(Path::new(&home))
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct PersistedDocumentView {
     pub page_index: i32,
     pub scale: f64,
@@ -454,6 +558,33 @@ mod tests {
         let removed = toggle_bookmark_for_home(&home, &doc, 3, None);
         assert!(!removed);
         assert!(load_bookmarks_for_home(&home, &doc).is_empty());
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn app_settings_roundtrip_and_shortcut_overrides() {
+        let base = std::env::temp_dir().join(format!(
+            "gpdfview-settings-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch available")
+                .as_nanos()
+        ));
+        let home = base.join("home");
+        let settings = AppSettings {
+            default_layout: "continuous".to_string(),
+            split_sync: true,
+            zoom_step: 0.12,
+            shortcuts: HashMap::from([("open_file".to_string(), "Ctrl+O".to_string())]),
+        };
+
+        save_app_settings_for_home(&home, &settings);
+        let restored = load_app_settings_for_home(&home);
+        assert_eq!(restored.default_layout, "continuous");
+        assert!(restored.split_sync);
+        assert_eq!(restored.shortcuts.get("open_file").map(String::as_str), Some("Ctrl+O"));
 
         let _ = fs::remove_dir_all(&base);
     }

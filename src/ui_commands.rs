@@ -9,6 +9,7 @@ pub(crate) enum UiCommand {
     ToggleSidebar,
     ToggleFavoriteDocument,
     ShowAbout,
+    OpenSettingsDialog,
     ToggleFullscreen,
     TogglePresentation,
     ToggleCurrentPageBookmark,
@@ -56,6 +57,9 @@ pub(crate) fn dispatch_ui_command(
             controller
                 .status
                 .set_text("gpdfview: visualizador PDF em Rust + GTK4 inspirado no qpdfview.");
+        }
+        UiCommand::OpenSettingsDialog => {
+            controller.show_settings_dialog();
         }
         UiCommand::ToggleFullscreen => {
             if controller.window.is_fullscreen() {
