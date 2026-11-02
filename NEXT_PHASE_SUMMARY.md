@@ -27,15 +27,26 @@ Resultado verificado:
 
 ## Foco da próxima fase
 
-1. Revisão final da experiência de leitura
-   - atalhos de teclado e navegação por página
-   - comportamento consistente em documentos grandes
-   - responder bem a eventos rápidos do usuário
+### Bloco 2 — abas independentes e ações por aba
 
-2. Consolidação do pacote de distribuição
-   - manter scripts de release sob controle
-   - documentar uso e requisitos de execução
-   - archive final para uso em Linux
+Status verificado:
+
+- cada aba mantém seu próprio ciclo de render e estado de navegação
+- a linha de abas desaparece quando a última aba é fechada
+- a gestão de títulos e fechamento segue o contrato de múltiplas abas
+- a validação atual reflete que a fila de abas não está mais compartilhando estado crítico
+
+### Bloco 3 — persistência e retomada ao abrir
+
+- últimos PDFs e diretório atual
+- restauração da última sessão válida
+- startup sem regressão no fluxo de abertura
+
+### Bloco 4 — pacote e benchmark
+
+- manter scripts de release sob controle
+- documentar uso e requisitos de execução
+- archive final para uso em Linux
 
 3. Encerramento do ciclo de projeto
    - confirmar estado funcional em smoke test
