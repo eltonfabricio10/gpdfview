@@ -6,7 +6,7 @@ use crate::navigation::{
     change_zoom, fit_page, fit_width, handle_key_action, navigate_to, rotate_page,
     toggle_presentation_mode,
 };
-use crate::printing::PrintService;
+use crate::printing::{PrintOptions, PrintOrientation, PrintService};
 use crate::rendering::{poll, present_page, request_render, schedule_prefetch, search_current_page};
 use crate::session::load_document_view;
 #[cfg(test)]
@@ -302,11 +302,15 @@ impl ViewerController {
     }
 
     pub(crate) fn submit_print(&self) {
+        self.show_print_options_dialog();
+    }
+
+    pub(crate) fn submit_print_with_options(&self, options: PrintOptions) {
         let Some(path) = self.state.borrow().path.clone() else {
             self.status.set_text("Open a PDF document before printing.");
             return;
         };
-        match self.printer.submit(path) {
+        match self.printer.submit_with_options(path, options) {
             Ok(()) => {
                 self.print_button.set_sensitive(false);
                 self.status
@@ -314,6 +318,94 @@ impl ViewerController {
             }
             Err(error) => self.status.set_text(&format!("Print failed: {error}")),
         }
+    }
+
+    #[allow(deprecated)]
+    pub(crate) fn show_print_options_dialog(&self) {
+        let state = self.state.borrow();
+        let page_count = state.page_count.max(1);
+        let current_page = state.page_index.clamp(0, page_count - 1) + 1;
+        drop(state);
+
+        let dialog = gtk::Dialog::builder()
+            .transient_for(&self.window)
+            .modal(true)
+            .title("Print options")
+            .build();
+        dialog.add_button("Cancel", gtk::ResponseType::Cancel);
+        dialog.add_button("Print", gtk::ResponseType::Accept);
+
+        let content = dialog.content_area();
+        let grid = gtk::Grid::new();
+        grid.set_margin_top(12);
+        grid.set_margin_bottom(12);
+        grid.set_margin_start(12);
+        grid.set_margin_end(12);
+        grid.set_row_spacing(8);
+        grid.set_column_spacing(10);
+
+        let from_label = gtk::Label::new(Some("From page"));
+        from_label.set_halign(gtk::Align::Start);
+        let from_spin = gtk::SpinButton::with_range(1.0, f64::from(page_count), 1.0);
+        from_spin.set_value(f64::from(current_page));
+        grid.attach(&from_label, 0, 0, 1, 1);
+        grid.attach(&from_spin, 1, 0, 1, 1);
+
+        let to_label = gtk::Label::new(Some("To page"));
+        to_label.set_halign(gtk::Align::Start);
+        let to_spin = gtk::SpinButton::with_range(1.0, f64::from(page_count), 1.0);
+        to_spin.set_value(f64::from(page_count));
+        grid.attach(&to_label, 0, 1, 1, 1);
+        grid.attach(&to_spin, 1, 1, 1, 1);
+
+        let copies_label = gtk::Label::new(Some("Copies"));
+        copies_label.set_halign(gtk::Align::Start);
+        let copies_spin = gtk::SpinButton::with_range(1.0, 99.0, 1.0);
+        copies_spin.set_value(1.0);
+        grid.attach(&copies_label, 0, 2, 1, 1);
+        grid.attach(&copies_spin, 1, 2, 1, 1);
+
+        let orientation_label = gtk::Label::new(Some("Orientation"));
+        orientation_label.set_halign(gtk::Align::Start);
+        let orientation = gtk::ComboBoxText::new();
+        orientation.append(Some("portrait"), "Portrait");
+        orientation.append(Some("landscape"), "Landscape");
+        orientation.set_active_id(Some("portrait"));
+        grid.attach(&orientation_label, 0, 3, 1, 1);
+        grid.attach(&orientation, 1, 3, 1, 1);
+
+        let scale_label = gtk::Label::new(Some("Scale (%)"));
+        scale_label.set_halign(gtk::Align::Start);
+        let scale_spin = gtk::SpinButton::with_range(10.0, 400.0, 5.0);
+        scale_spin.set_value(100.0);
+        grid.attach(&scale_label, 0, 4, 1, 1);
+        grid.attach(&scale_spin, 1, 4, 1, 1);
+
+        content.append(&grid);
+
+        let controller = self.clone();
+        dialog.connect_response(move |dialog, response| {
+            if response == gtk::ResponseType::Accept {
+                let mut from = from_spin.value_as_int().max(1) as u32;
+                let mut to = to_spin.value_as_int().max(1) as u32;
+                if to < from {
+                    std::mem::swap(&mut from, &mut to);
+                }
+                let options = PrintOptions {
+                    page_range: Some((from, to)),
+                    copies: copies_spin.value_as_int().max(1) as u32,
+                    orientation: match orientation.active_id().as_deref() {
+                        Some("landscape") => PrintOrientation::Landscape,
+                        _ => PrintOrientation::Portrait,
+                    },
+                    scale_percent: scale_spin.value_as_int().clamp(10, 400) as u32,
+                };
+                controller.submit_print_with_options(options);
+            }
+            dialog.close();
+        });
+
+        dialog.present();
     }
 }
 
