@@ -1,6 +1,6 @@
 use cairo::{Context, PdfSurface};
-use gtk::gio;
-use gtk::gio::prelude::*;
+use gtk4::gio;
+use gtk4::gio::prelude::*;
 use poppler::Document;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -160,8 +160,8 @@ mod tests {
     use super::{TemporaryPdf, render_for_printing};
     use crate::poppler_lock;
     use cairo::{Context, PdfSurface};
-    use gtk::gio;
-    use gtk::gio::prelude::*;
+    use gtk4::gio;
+    use gtk4::gio::prelude::*;
     use poppler::Document;
 
     struct PdfFixture(TemporaryPdf);

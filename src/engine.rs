@@ -1,6 +1,6 @@
-use cairo::{Context, Format, ImageSurface};
-use gtk::gio;
-use gtk::gio::prelude::*;
+use gtk4::cairo::{Context, Format, ImageSurface};
+use gtk4::gio;
+use gtk4::gio::prelude::*;
 use poppler::{Document, Page};
 use std::collections::VecDeque;
 use std::path::PathBuf;
