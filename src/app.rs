@@ -602,6 +602,13 @@ mod tests {
     }
 
     #[test]
+    fn tab_visibility_uses_the_count_of_visible_pages() {
+        assert!(should_show_tabs(1));
+        assert!(should_show_tabs(2));
+        assert!(!should_show_tabs(0));
+    }
+
+    #[test]
     fn key_shortcuts_map_to_navigation_and_zoom_actions() {
         assert_eq!(resolve_key_action("PageDown", 0), Some(KeyAction::NextPage));
         assert_eq!(resolve_key_action("PageUp", 0), Some(KeyAction::PreviousPage));
@@ -718,6 +725,10 @@ fn action_button(icon_name: &str, tooltip: &str) -> gtk::Button {
     button
 }
 
+fn should_show_tabs(page_count: u32) -> bool {
+    page_count > 0
+}
+
 #[derive(Clone)]
 struct DocumentTabManager {
     notebook: Option<gtk::Notebook>,
@@ -743,6 +754,18 @@ impl DocumentTabManager {
     #[cfg(test)]
     fn record_tab(&self, title: &str) {
         self.titles.borrow_mut().push(title.to_string());
+    }
+
+    fn close_tab(&self, page: &gtk::Box) -> bool {
+        let Some(notebook) = self.notebook.clone() else {
+            return false;
+        };
+        if let Some(page_index) = notebook.page_num(page) {
+            notebook.remove_page(Some(page_index));
+            notebook.set_show_tabs(should_show_tabs(notebook.n_pages()));
+            return true;
+        }
+        false
     }
 
     fn add_tab(&self, page: &gtk::Box, title: &str) {
@@ -771,19 +794,16 @@ impl DocumentTabManager {
 
         if let Some(notebook) = self.notebook.clone() {
             let page_widget = page.clone();
-            let closure_notebook = notebook.clone();
+            let closure_manager = self.clone();
             close_button.connect_clicked(move |_| {
-                if let Some(page_index) = closure_notebook.page_num(&page_widget) {
-                    closure_notebook.remove_page(Some(page_index));
-                    closure_notebook.set_show_tabs(closure_notebook.n_pages() > 0);
-                }
+                let _ = closure_manager.close_tab(&page_widget);
             });
             label_box.append(&close_button);
 
             let index = notebook.append_page(page, Some(&label_box));
             notebook.set_tab_reorderable(page, true);
             notebook.set_current_page(Some(index));
-            notebook.set_show_tabs(true);
+            notebook.set_show_tabs(should_show_tabs(notebook.n_pages()));
         }
         self.titles.borrow_mut().push(title.to_string());
     }
