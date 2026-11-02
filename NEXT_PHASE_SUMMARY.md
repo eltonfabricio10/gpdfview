@@ -13,17 +13,21 @@ O projeto já está em um estado funcional e estável para a fase de fechamento 
 
 ## Verificação recente
 
-Comando executado:
+Comandos executados:
 
 ```bash
 cargo test -q
+./scripts/benchmark.sh
+./scripts/package_release.sh
 ```
 
-Resultado verificado:
+Resultados verificados:
 
-- 19 testes passaram
+- 25 testes passaram
 - 0 falharam
 - 0 ignorados
+- benchmark gerado em `measurements/gpdfview_benchmark.tsv`
+- pacote de release criado em `dist/gpdfview-linux-x86_64.tar.gz`
 
 ## Foco da próxima fase
 
@@ -38,20 +42,25 @@ Status verificado:
 
 ### Bloco 3 — persistência e retomada ao abrir
 
-- últimos PDFs e diretório atual
-- restauração da última sessão válida
-- startup sem regressão no fluxo de abertura
+Status verificado:
+
+- últimos PDFs e diretório atual são gravados e restaurados
+- a última sessão válida pode ser reaberta sem quebrar a base de documentos ativos
+- o fluxo de startup continua operacional em teste e em execução via smoke check
 
 ### Bloco 4 — pacote e benchmark
 
-- manter scripts de release sob controle
-- documentar uso e requisitos de execução
-- archive final para uso em Linux
+Status verificado:
 
-3. Encerramento do ciclo de projeto
-   - confirmar estado funcional em smoke test
-   - registrar resultados em benchmark
-   - preparar a base para evolução futura
+- scripts de benchmark e release estão operando
+- o relatório de tempo e memória foi gerado corretamente
+- o pacote Linux foi montado em `dist/` para distribuição local
+
+### Encerramento do ciclo de projeto
+
+- confirmar estado funcional em smoke test
+- registrar resultados em benchmark
+- preparar a base para evolução futura
 
 ## Checklist de fechamento
 
