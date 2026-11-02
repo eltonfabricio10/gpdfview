@@ -202,6 +202,13 @@ fn populate_pages_flow(
     }
 }
 
+fn section_toggle(label: &str, active: bool) -> gtk4::ToggleButton {
+    let button = gtk4::ToggleButton::with_label(label);
+    button.set_active(active);
+    button.set_has_frame(false);
+    button
+}
+
 fn populate_outline_list(list: &gtk4::ListBox, controller: &ViewerController) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
@@ -302,6 +309,22 @@ pub fn build_sidebar(
     sidebar_root.append(&panel_header);
     sidebar_root.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
 
+    let section_toggle_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
+    section_toggle_row.set_margin_start(8);
+    section_toggle_row.set_margin_end(8);
+    section_toggle_row.set_margin_top(6);
+    section_toggle_row.set_margin_bottom(6);
+    let mini_toggle = section_toggle("Mini", true);
+    let outline_toggle = section_toggle("Marc", true);
+    let recent_toggle = section_toggle("Rec", false);
+    let favorites_toggle = section_toggle("Fav", false);
+    section_toggle_row.append(&mini_toggle);
+    section_toggle_row.append(&outline_toggle);
+    section_toggle_row.append(&recent_toggle);
+    section_toggle_row.append(&favorites_toggle);
+    sidebar_root.append(&section_toggle_row);
+    sidebar_root.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
+
     let hide_sidebar = sidebar_root.clone();
     close_button.connect_clicked(move |_| {
         hide_sidebar.set_visible(false);
@@ -329,7 +352,9 @@ pub fn build_sidebar(
     pages_flow.set_column_spacing(0);
     let thumbnail_cache = Rc::new(RefCell::new(LruCache::new(THUMBNAIL_CACHE_BYTES)));
     populate_pages_flow(&pages_flow, &controller, &thumbnail_cache);
-    sidebar.append(&pages_flow);
+    let thumbnails_section = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    thumbnails_section.append(&pages_flow);
+    sidebar.append(&thumbnails_section);
 
     let outline_header = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
     outline_header.set_halign(gtk4::Align::Fill);
@@ -379,6 +404,7 @@ pub fn build_sidebar(
     let recent_expander = gtk4::Expander::new(Some("Recentes"));
     recent_expander.set_expanded(false);
     recent_expander.set_child(Some(&recent_section));
+    recent_expander.set_visible(false);
     sidebar.append(&recent_expander);
 
     let favorites_list = gtk4::ListBox::new();
@@ -401,7 +427,33 @@ pub fn build_sidebar(
     let favorites_expander = gtk4::Expander::new(Some("Favoritos"));
     favorites_expander.set_expanded(false);
     favorites_expander.set_child(Some(&favorites_section));
+    favorites_expander.set_visible(false);
     sidebar.append(&favorites_expander);
+
+    {
+        let thumbnails_section = thumbnails_section.clone();
+        mini_toggle.connect_toggled(move |button| {
+            thumbnails_section.set_visible(button.is_active());
+        });
+    }
+    {
+        let outline_expander = outline_expander.clone();
+        outline_toggle.connect_toggled(move |button| {
+            outline_expander.set_visible(button.is_active());
+        });
+    }
+    {
+        let recent_expander = recent_expander.clone();
+        recent_toggle.connect_toggled(move |button| {
+            recent_expander.set_visible(button.is_active());
+        });
+    }
+    {
+        let favorites_expander = favorites_expander.clone();
+        favorites_toggle.connect_toggled(move |button| {
+            favorites_expander.set_visible(button.is_active());
+        });
+    }
 
     let state_signature = Rc::new(RefCell::new((None::<PathBuf>, -1, -1, 0)));
     let watch_controller = controller.clone();
