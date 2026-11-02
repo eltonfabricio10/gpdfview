@@ -32,6 +32,7 @@ enum KeyAction {
     OpenFile,
     FocusSearch,
     ToggleFullscreen,
+    TogglePresentation,
 }
 
 fn normalize_rotation(rotation: i32) -> i32 {
@@ -63,6 +64,9 @@ fn resolve_key_action(key: &str, modifiers: u32) -> Option<KeyAction> {
     }
     if lowered == "f11" {
         return Some(KeyAction::ToggleFullscreen);
+    }
+    if lowered == "f5" {
+        return Some(KeyAction::TogglePresentation);
     }
 
     match lowered.as_str() {
@@ -134,6 +138,7 @@ struct ViewerController {
     status: gtk::Label,
     print_button: gtk::Button,
     title: gtk::Label,
+    toolbar: gtk::Box,
     window: adw::ApplicationWindow,
     root: gtk::Box,
 }
@@ -176,6 +181,7 @@ impl ViewerController {
                 self.search_entry.select_region(0, -1);
             }
             KeyAction::ToggleFullscreen => self.toggle_fullscreen(),
+            KeyAction::TogglePresentation => self.toggle_presentation_mode(),
         }
     }
 
@@ -184,6 +190,17 @@ impl ViewerController {
             self.window.unfullscreen();
         } else {
             self.window.fullscreen();
+        }
+    }
+
+    fn toggle_presentation_mode(&self) {
+        let is_visible = self.toolbar.is_visible();
+        self.toolbar.set_visible(!is_visible);
+        self.status.set_visible(!is_visible);
+        if is_visible {
+            self.window.fullscreen();
+        } else {
+            self.window.unfullscreen();
         }
     }
 
@@ -630,6 +647,7 @@ mod tests {
         assert_eq!(resolve_key_action("minus", 0), Some(KeyAction::ZoomOut));
         assert_eq!(resolve_key_action("f", 0), Some(KeyAction::FitWidth));
         assert_eq!(resolve_key_action("F11", 0), Some(KeyAction::ToggleFullscreen));
+        assert_eq!(resolve_key_action("F5", 0), Some(KeyAction::TogglePresentation));
         assert_eq!(
             resolve_key_action("f", gtk::gdk::ModifierType::CONTROL_MASK.bits()),
             Some(KeyAction::FocusSearch)
@@ -1336,6 +1354,8 @@ fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     header.pack_start(&open_button);
     let fullscreen_button = action_button("view-fullscreen-symbolic", "Toggle fullscreen");
     header.pack_end(&fullscreen_button);
+    let presentation_button = action_button("view-presentation-symbolic", "Toggle presentation mode");
+    header.pack_end(&presentation_button);
     let print_button = action_button("printer-symbolic", "Send the current PDF to the default printer");
     print_button.set_sensitive(false);
     header.pack_end(&print_button);
@@ -1388,6 +1408,14 @@ fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
             fullscreen_window.unfullscreen();
         } else {
             fullscreen_window.fullscreen();
+        }
+    });
+    let presentation_window = open_window.clone();
+    let presentation_controller = initial.clone();
+    presentation_button.connect_clicked(move |_| {
+        presentation_controller.toggle_presentation_mode();
+        if presentation_window.is_fullscreen() {
+            presentation_window.fullscreen();
         }
     });
     open_button.connect_clicked({
@@ -1503,6 +1531,7 @@ fn create_document_controller(
         status,
         print_button,
         title,
+        toolbar: toolbar.clone(),
         window: window.clone(),
         root: root.clone(),
     });
