@@ -1,6 +1,10 @@
 use crate::cache::LruCache;
 use crate::engine::{PdfRenderer, RenderError, RenderResult, RenderedPage};
 use crate::printing::PrintService;
+use crate::viewer_state::{
+    apply_render_request, normalize_rotation, sanitize_scale, RenderKey, ViewerState,
+    DEFAULT_ZOOM,
+};
 use libadwaita as adw;
 use adw::prelude::*;
 use gtk4 as gtk;
@@ -15,7 +19,6 @@ use std::time::{Duration, Instant};
 
 
 const CACHE_LIMIT_BYTES: usize = 128 * 1024 * 1024;
-const DEFAULT_ZOOM: f64 = 1.0;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum KeyAction {
@@ -33,43 +36,6 @@ enum KeyAction {
     FocusSearch,
     ToggleFullscreen,
     TogglePresentation,
-}
-
-fn normalize_rotation(rotation: i32) -> i32 {
-    let normalized = rotation.rem_euclid(360);
-    if normalized == 360 { 0 } else { normalized }
-}
-
-fn sanitize_scale(scale: f64) -> f64 {
-    if scale.is_finite() {
-        scale.clamp(0.1, 4.0)
-    } else {
-        DEFAULT_ZOOM
-    }
-}
-
-fn apply_render_request(
-    state: &mut ViewerState,
-    path: Option<PathBuf>,
-    page_index: i32,
-    scale: f64,
-    rotation: i32,
-) -> Option<(PathBuf, i32, f64, i32)> {
-    let path = path?;
-    let normalized_scale = sanitize_scale(scale);
-    let normalized_rotation = normalize_rotation(rotation);
-    let normalized_page_index = if state.page_count == 0 {
-        0
-    } else {
-        page_index.clamp(0, state.page_count - 1)
-    };
-
-    state.page_index = normalized_page_index;
-    state.scale = normalized_scale;
-    state.rotation = normalized_rotation;
-    state.search_highlights.clear();
-
-    Some((path, normalized_page_index, normalized_scale, normalized_rotation))
 }
 
 #[cfg(test)]
@@ -116,29 +82,6 @@ fn resolve_key_action(key: &str, modifiers: u32) -> Option<KeyAction> {
     }
 }
 
-#[derive(Clone, Debug, Hash, PartialEq, Eq)]
-struct RenderKey {
-    path: PathBuf,
-    page_index: i32,
-    scale_milli: u32,
-    rotation: i32,
-}
-
-impl RenderKey {
-    fn new(path: PathBuf, page_index: i32, scale: f64, rotation: i32) -> Self {
-        Self {
-            path,
-            page_index,
-            scale_milli: (scale * 1000.0).round() as u32,
-            rotation: normalize_rotation(rotation),
-        }
-    }
-
-    fn scale(&self) -> f64 {
-        f64::from(self.scale_milli) / 1000.0
-    }
-}
-
 fn build_document_properties_dialog(parent: &impl IsA<gtk::Window>, properties: &str) -> gtk::Window {
     let dialog = gtk::Window::new();
     dialog.set_title(Some("Document properties"));
@@ -167,20 +110,6 @@ fn build_document_properties_dialog(parent: &impl IsA<gtk::Window>, properties: 
     content.append(&close_button);
     dialog.set_child(Some(&content));
     dialog
-}
-
-#[derive(Default)]
-struct ViewerState {
-    path: Option<PathBuf>,
-    page_index: i32,
-    page_count: i32,
-    page_width_points: f64,
-    page_height_points: f64,
-    scale: f64,
-    rotation: i32,
-    generation: u64,
-    request_started: Option<Instant>,
-    search_highlights: Vec<(f64, f64, f64, f64)>,
 }
 
 #[derive(Clone)]
