@@ -14,7 +14,7 @@ use crate::session::{
 };
 use crate::viewer_state::RenderKey;
 
-const THUMBNAIL_MAX_EDGE: i32 = 120;
+const THUMBNAIL_MAX_EDGE: i32 = 132;
 const THUMBNAIL_CACHE_BYTES: usize = 24 * 1024 * 1024;
 
 #[derive(Clone)]
@@ -198,7 +198,7 @@ fn populate_pages_flow(
             page_index,
             page_index == state.page_index,
         );
-        page_button.set_size_request(90, -1);
+        page_button.set_size_request(150, -1);
         pages_flow.insert(&page_button, -1);
     }
 }
@@ -285,33 +285,49 @@ pub fn build_sidebar(
     };
 
     let sidebar_root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    sidebar_root.set_size_request(260, -1);
+    sidebar_root.set_size_request(178, -1);
+
+    let panel_header = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
+    panel_header.set_margin_start(8);
+    panel_header.set_margin_end(8);
+    panel_header.set_margin_top(6);
+    panel_header.set_margin_bottom(6);
+    let panel_title = gtk4::Label::new(Some("Miniaturas"));
+    panel_title.set_xalign(0.0);
+    panel_title.set_hexpand(true);
+    panel_header.append(&panel_title);
+    let close_button = gtk4::Button::from_icon_name("window-close-symbolic");
+    close_button.set_has_frame(false);
+    close_button.set_tooltip_text(Some("Ocultar painel"));
+    panel_header.append(&close_button);
+    sidebar_root.append(&panel_header);
+    sidebar_root.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
+
+    let hide_sidebar = sidebar_root.clone();
+    close_button.connect_clicked(move |_| {
+        hide_sidebar.set_visible(false);
+    });
 
     let sidebar_scrolled = gtk4::ScrolledWindow::new();
     sidebar_scrolled.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
     sidebar_scrolled.set_vexpand(true);
     sidebar_scrolled.set_hexpand(false);
 
-    let sidebar = gtk4::Box::new(gtk4::Orientation::Vertical, 10);
-    sidebar.set_margin_start(10);
-    sidebar.set_margin_end(10);
-    sidebar.set_margin_top(10);
-    sidebar.set_margin_bottom(10);
+    let sidebar = gtk4::Box::new(gtk4::Orientation::Vertical, 8);
+    sidebar.set_margin_start(6);
+    sidebar.set_margin_end(6);
+    sidebar.set_margin_top(6);
+    sidebar.set_margin_bottom(6);
     sidebar_scrolled.set_child(Some(&sidebar));
     sidebar_root.append(&sidebar_scrolled);
 
-    let pages_label = gtk4::Label::new(Some("Pages"));
-    pages_label.set_halign(gtk4::Align::Start);
-    pages_label.set_markup("<b>Pages</b>");
-    sidebar.append(&pages_label);
-
     let pages_flow = gtk4::FlowBox::new();
-    pages_flow.set_min_children_per_line(2);
-    pages_flow.set_max_children_per_line(2);
+    pages_flow.set_min_children_per_line(1);
+    pages_flow.set_max_children_per_line(1);
     pages_flow.set_selection_mode(gtk4::SelectionMode::None);
     pages_flow.set_homogeneous(false);
-    pages_flow.set_row_spacing(6);
-    pages_flow.set_column_spacing(6);
+    pages_flow.set_row_spacing(8);
+    pages_flow.set_column_spacing(0);
     let thumbnail_cache = Rc::new(RefCell::new(LruCache::new(THUMBNAIL_CACHE_BYTES)));
     populate_pages_flow(&pages_flow, &controller, &thumbnail_cache);
     sidebar.append(&pages_flow);
@@ -319,14 +335,13 @@ pub fn build_sidebar(
     let outline_header = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
     outline_header.set_halign(gtk4::Align::Fill);
     outline_header.set_hexpand(true);
-    let outline_label = gtk4::Label::new(Some("Outline"));
+    let outline_label = gtk4::Label::new(Some("Marcadores"));
     outline_label.set_halign(gtk4::Align::Start);
     outline_label.set_hexpand(true);
-    outline_label.set_markup("<b>Outline</b>");
+    outline_label.set_markup("<b>Marcadores</b>");
     outline_header.append(&outline_label);
-    let refresh_outline = gtk4::Button::with_label("Refresh");
+    let refresh_outline = gtk4::Button::with_label("Atualizar");
     outline_header.append(&refresh_outline);
-    sidebar.append(&outline_header);
 
     let outline_list = gtk4::ListBox::new();
     outline_list.set_selection_mode(gtk4::SelectionMode::None);
@@ -337,12 +352,13 @@ pub fn build_sidebar(
     refresh_outline.connect_clicked(move |_| {
         populate_outline_list(&outline_list_for_refresh, &outline_controller);
     });
-    sidebar.append(&outline_list);
-
-    let recent_label = gtk4::Label::new(Some("Recent"));
-    recent_label.set_halign(gtk4::Align::Start);
-    recent_label.set_markup("<b>Recent</b>");
-    sidebar.append(&recent_label);
+    let outline_section = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+    outline_section.append(&outline_header);
+    outline_section.append(&outline_list);
+    let outline_expander = gtk4::Expander::new(Some("Marcadores"));
+    outline_expander.set_expanded(false);
+    outline_expander.set_child(Some(&outline_section));
+    sidebar.append(&outline_expander);
 
     let recent_list = gtk4::ListBox::new();
     recent_list.set_selection_mode(gtk4::SelectionMode::Single);
@@ -353,19 +369,18 @@ pub fn build_sidebar(
             .and_then(|name| name.to_str())
             .unwrap_or("Document")
             .to_string();
-        append_sidebar_entry(
-            &recent_list,
-            path,
-            &label,
-            &open_context,
-        );
+        append_sidebar_entry(&recent_list, path, &label, &open_context);
     }
-    sidebar.append(&recent_list);
-
-    let favorites_label = gtk4::Label::new(Some("Favorites"));
-    favorites_label.set_halign(gtk4::Align::Start);
-    favorites_label.set_markup("<b>Favorites</b>");
-    sidebar.append(&favorites_label);
+    let recent_section = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+    let recent_title = gtk4::Label::new(Some("<b>Recentes</b>"));
+    recent_title.set_use_markup(true);
+    recent_title.set_xalign(0.0);
+    recent_section.append(&recent_title);
+    recent_section.append(&recent_list);
+    let recent_expander = gtk4::Expander::new(Some("Recentes"));
+    recent_expander.set_expanded(false);
+    recent_expander.set_child(Some(&recent_section));
+    sidebar.append(&recent_expander);
 
     let favorites_list = gtk4::ListBox::new();
     favorites_list.set_selection_mode(gtk4::SelectionMode::Single);
@@ -376,14 +391,18 @@ pub fn build_sidebar(
             .and_then(|name| name.to_str())
             .unwrap_or("Document")
             .to_string();
-        append_sidebar_entry(
-            &favorites_list,
-            path,
-            &label,
-            &open_context,
-        );
+        append_sidebar_entry(&favorites_list, path, &label, &open_context);
     }
-    sidebar.append(&favorites_list);
+    let favorites_section = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+    let favorites_title = gtk4::Label::new(Some("<b>Favoritos</b>"));
+    favorites_title.set_use_markup(true);
+    favorites_title.set_xalign(0.0);
+    favorites_section.append(&favorites_title);
+    favorites_section.append(&favorites_list);
+    let favorites_expander = gtk4::Expander::new(Some("Favoritos"));
+    favorites_expander.set_expanded(false);
+    favorites_expander.set_child(Some(&favorites_section));
+    sidebar.append(&favorites_expander);
 
     let state_signature = Rc::new(RefCell::new((None::<PathBuf>, -1, -1, 0)));
     let watch_controller = controller.clone();
