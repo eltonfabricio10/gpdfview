@@ -51,6 +51,17 @@ fn rotated_page_dimensions(width_points: f64, height_points: f64, rotation: i32)
     }
 }
 
+fn normalize_print_page_range(mode: &str, page_count: u32, current_page: u32) -> Option<(u32, u32)> {
+    let total_pages = page_count.max(1);
+    let current = current_page.clamp(1, total_pages);
+    match mode {
+        "all" => Some((1, total_pages)),
+        "current" => Some((current, current)),
+        "range" => Some((1, total_pages)),
+        _ => Some((1, total_pages)),
+    }
+}
+
 #[derive(Clone)]
 pub(crate) struct ViewerController {
     pub(crate) renderer: Rc<PdfRenderer>,
@@ -378,26 +389,36 @@ impl ViewerController {
         grid.set_row_spacing(8);
         grid.set_column_spacing(10);
 
+        let range_label = gtk::Label::new(Some("Print range"));
+        range_label.set_halign(gtk::Align::Start);
+        let range_mode = gtk::ComboBoxText::new();
+        range_mode.append(Some("all"), "All pages");
+        range_mode.append(Some("current"), "Current page");
+        range_mode.append(Some("range"), "Custom range");
+        range_mode.set_active_id(Some("all"));
+        grid.attach(&range_label, 0, 0, 1, 1);
+        grid.attach(&range_mode, 1, 0, 1, 1);
+
         let from_label = gtk::Label::new(Some("From page"));
         from_label.set_halign(gtk::Align::Start);
         let from_spin = gtk::SpinButton::with_range(1.0, f64::from(page_count), 1.0);
-        from_spin.set_value(f64::from(current_page));
-        grid.attach(&from_label, 0, 0, 1, 1);
-        grid.attach(&from_spin, 1, 0, 1, 1);
+        from_spin.set_value(1.0);
+        grid.attach(&from_label, 0, 1, 1, 1);
+        grid.attach(&from_spin, 1, 1, 1, 1);
 
         let to_label = gtk::Label::new(Some("To page"));
         to_label.set_halign(gtk::Align::Start);
         let to_spin = gtk::SpinButton::with_range(1.0, f64::from(page_count), 1.0);
         to_spin.set_value(f64::from(page_count));
-        grid.attach(&to_label, 0, 1, 1, 1);
-        grid.attach(&to_spin, 1, 1, 1, 1);
+        grid.attach(&to_label, 0, 2, 1, 1);
+        grid.attach(&to_spin, 1, 2, 1, 1);
 
         let copies_label = gtk::Label::new(Some("Copies"));
         copies_label.set_halign(gtk::Align::Start);
         let copies_spin = gtk::SpinButton::with_range(1.0, 99.0, 1.0);
         copies_spin.set_value(1.0);
-        grid.attach(&copies_label, 0, 2, 1, 1);
-        grid.attach(&copies_spin, 1, 2, 1, 1);
+        grid.attach(&copies_label, 0, 3, 1, 1);
+        grid.attach(&copies_spin, 1, 3, 1, 1);
 
         let orientation_label = gtk::Label::new(Some("Orientation"));
         orientation_label.set_halign(gtk::Align::Start);
@@ -405,24 +426,65 @@ impl ViewerController {
         orientation.append(Some("portrait"), "Portrait");
         orientation.append(Some("landscape"), "Landscape");
         orientation.set_active_id(Some("portrait"));
-        grid.attach(&orientation_label, 0, 3, 1, 1);
-        grid.attach(&orientation, 1, 3, 1, 1);
+        grid.attach(&orientation_label, 0, 4, 1, 1);
+        grid.attach(&orientation, 1, 4, 1, 1);
 
         let scale_label = gtk::Label::new(Some("Scale (%)"));
         scale_label.set_halign(gtk::Align::Start);
         let scale_spin = gtk::SpinButton::with_range(10.0, 400.0, 5.0);
         scale_spin.set_value(100.0);
-        grid.attach(&scale_label, 0, 4, 1, 1);
-        grid.attach(&scale_spin, 1, 4, 1, 1);
+        grid.attach(&scale_label, 0, 5, 1, 1);
+        grid.attach(&scale_spin, 1, 5, 1, 1);
+
+        let range_mode_for_updates = range_mode.clone();
+        let from_spin_for_updates = from_spin.clone();
+        let to_spin_for_updates = to_spin.clone();
+        range_mode.connect_changed(move |_| {
+            let mode = range_mode_for_updates
+                .active_id()
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| "all".to_string());
+            let custom_range = mode == "range";
+            from_spin_for_updates.set_sensitive(custom_range);
+            to_spin_for_updates.set_sensitive(custom_range);
+            let (from, to) = normalize_print_page_range(mode.as_str(), page_count as u32, current_page as u32)
+                .unwrap_or((1, page_count as u32));
+            from_spin_for_updates.set_value(from as f64);
+            to_spin_for_updates.set_value(to as f64);
+        });
+        {
+            let mode = range_mode
+                .active_id()
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| "all".to_string());
+            let custom_range = mode == "range";
+            from_spin.set_sensitive(custom_range);
+            to_spin.set_sensitive(custom_range);
+            let (from, to) = normalize_print_page_range(mode.as_str(), page_count as u32, current_page as u32)
+                .unwrap_or((1, page_count as u32));
+            from_spin.set_value(from as f64);
+            to_spin.set_value(to as f64);
+        }
 
         content.append(&grid);
 
         let controller = self.clone();
         dialog.connect_response(move |dialog, response| {
             if response == gtk::ResponseType::Accept {
-                let mut from = from_spin.value_as_int().max(1) as u32;
-                let mut to = to_spin.value_as_int().max(1) as u32;
-                if to < from {
+                let mode = range_mode
+                    .active_id()
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| "all".to_string());
+                let (mut from, mut to) = match mode.as_str() {
+                    "all" => (1_u32, page_count as u32),
+                    "current" => (current_page as u32, current_page as u32),
+                    "range" => (
+                        from_spin.value_as_int().max(1) as u32,
+                        to_spin.value_as_int().max(1) as u32,
+                    ),
+                    _ => (1_u32, page_count as u32),
+                };
+                if mode == "range" && to < from {
                     std::mem::swap(&mut from, &mut to);
                 }
                 let options = PrintOptions {
@@ -611,6 +673,14 @@ mod tests {
         let rect = (10.0, 20.0, 50.0, 30.0);
         let target = super::search_scroll_target(rect, 100.0, 1.0);
         assert_eq!(target, 70.0);
+    }
+
+    #[test]
+    fn custom_print_ranges_are_normalized_for_all_current_and_page_selections() {
+        assert_eq!(normalize_print_page_range("all", 10, 3), Some((1, 10)));
+        assert_eq!(normalize_print_page_range("current", 10, 3), Some((3, 3)));
+        assert_eq!(normalize_print_page_range("range", 10, 3), Some((1, 10)));
+        assert_eq!(normalize_print_page_range("range", 10, 11), Some((1, 10)));
     }
 
     #[test]
