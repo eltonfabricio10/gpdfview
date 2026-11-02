@@ -123,8 +123,11 @@ impl ViewerController {
             }
         }
         self.status.set_text("Loading first page…");
-        let state = self.state.borrow();
-        self.request_render(path, state.page_index, state.scale, state.rotation);
+        let (page_index, scale, rotation) = {
+            let state = self.state.borrow();
+            (state.page_index, state.scale, state.rotation)
+        };
+        self.request_render(path, page_index, scale, rotation);
     }
 
     pub(crate) fn navigate_to(&self, page_index: i32) {
