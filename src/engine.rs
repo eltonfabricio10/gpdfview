@@ -192,6 +192,7 @@ pub fn find_text_in_page(path: &PathBuf, page_index: i32, query: &str) -> Result
     Ok(page.find_text(trimmed).len())
 }
 
+#[allow(dead_code)]
 pub fn find_text_rectangles_in_page(
     path: &PathBuf,
     page_index: i32,
@@ -211,6 +212,38 @@ pub fn find_text_rectangles_in_page(
         .into_iter()
         .map(|rect| (rect.x1(), rect.y1(), rect.x2(), rect.y2()))
         .collect())
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct DocumentTextMatch {
+    pub page_index: i32,
+    pub rect: (f64, f64, f64, f64),
+}
+
+pub fn find_text_rectangles_in_document(
+    path: &PathBuf,
+    query: &str,
+) -> Result<Vec<DocumentTextMatch>, String> {
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let document = load_document(path)?;
+    let mut matches = Vec::new();
+    let page_count = document.n_pages();
+    for page_index in 0..page_count {
+        let Some(page) = document.page(page_index) else {
+            continue;
+        };
+        for rect in page.find_text(trimmed) {
+            matches.push(DocumentTextMatch {
+                page_index,
+                rect: (rect.x1(), rect.y1(), rect.x2(), rect.y2()),
+            });
+        }
+    }
+    Ok(matches)
 }
 
 #[derive(Default)]

@@ -33,6 +33,12 @@ pub struct RenderKey {
     pub rotation: i32,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct SearchOccurrence {
+    pub page_index: i32,
+    pub rect: (f64, f64, f64, f64),
+}
+
 impl RenderKey {
     pub fn new(path: PathBuf, page_index: i32, scale: f64, rotation: i32) -> Self {
         Self {
@@ -60,8 +66,12 @@ pub struct ViewerState {
     pub generation: u64,
     pub request_started: Option<Instant>,
     pub layout_mode: LayoutMode,
+    pub search_query: String,
+    pub search_results: Vec<SearchOccurrence>,
+    pub search_global_index: usize,
     pub search_highlights: Vec<(f64, f64, f64, f64)>,
     pub search_index: usize,
+    pub pending_search_rect: Option<(f64, f64, f64, f64)>,
 }
 
 pub fn normalize_rotation(rotation: i32) -> i32 {

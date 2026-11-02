@@ -120,14 +120,19 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
     }
     *controller.surface.borrow_mut() = Some(page_surface);
 
-    {
+    let pending_scroll = {
         let mut state = controller.state.borrow_mut();
         state.page_count = page.page_count;
         state.page_index = page.page_index;
         state.page_width_points = page.page_width_points;
         state.page_height_points = page.page_height_points;
         state.rotation = page.rotation;
-    }
+        if state.page_index >= 0 {
+            state.pending_search_rect.take()
+        } else {
+            None
+        }
+    };
     controller.area.set_content_width(page.width.saturating_add(32));
     controller.area.set_content_height(page.height.saturating_add(32));
     controller.area.queue_draw();
@@ -155,6 +160,11 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
     let generation = controller.state.borrow().generation;
     if let Some(path) = path {
         controller.schedule_prefetch(path, page.page_index, page.page_count, scale, generation, rotation);
+    }
+
+    if let Some(rect) = pending_scroll {
+        let state = controller.state.borrow();
+        controller.scroll_to_search_match(rect, state.page_height_points, state.scale);
     }
 }
 
@@ -207,38 +217,46 @@ pub(crate) fn search_current_page(controller: &ViewerController) {
     let page_index = state.page_index;
     drop(state);
 
-    match crate::engine::find_text_rectangles_in_page(&path, page_index, &query) {
+    match crate::engine::find_text_rectangles_in_document(&path, &query) {
         Ok(matches) => {
-            let mut first_match_context = None;
+            let mut ordered_matches = matches;
+            if let Some(pivot) = ordered_matches
+                .iter()
+                .position(|entry| entry.page_index >= page_index)
+            {
+                ordered_matches.rotate_left(pivot);
+            }
             {
                 let mut state = controller.state.borrow_mut();
-                state.search_highlights = matches.clone();
+                state.search_query = query.clone();
+                state.search_results = ordered_matches
+                    .into_iter()
+                    .map(|entry| crate::viewer_state::SearchOccurrence {
+                        page_index: entry.page_index,
+                        rect: entry.rect,
+                    })
+                    .collect();
+                state.search_global_index = 0;
+                state.search_highlights.clear();
                 state.search_index = 0;
-                if let Some(first_match) = state.search_highlights.first().copied() {
-                    first_match_context = Some((first_match, state.page_height_points, state.scale));
-                }
+                state.pending_search_rect = None;
             }
-            if matches.is_empty() {
+            let total = controller.state.borrow().search_results.len();
+            if total == 0 {
                 controller.status.set_text(&format!(
-                    "No matches found for \"{query}\" on page {}.",
-                    page_index + 1
+                    "No matches found for \"{query}\" in this document.",
                 ));
                 controller.area.queue_draw();
                 return;
             }
-            if let Some((first_match, page_height_points, scale)) = first_match_context {
-                controller.scroll_to_search_match(first_match, page_height_points, scale);
-            }
-            controller.status.set_text(&format!(
-                "Found {} match(es) for \"{query}\" on page {} (showing 1 of {}).",
-                matches.len(),
-                page_index + 1,
-                matches.len()
-            ));
-            controller.area.queue_draw();
+            controller.focus_global_search_result(0);
         }
         Err(error) => {
-            controller.state.borrow_mut().search_highlights.clear();
+            let mut state = controller.state.borrow_mut();
+            state.search_results.clear();
+            state.search_highlights.clear();
+            state.search_query.clear();
+            state.pending_search_rect = None;
             controller.area.queue_draw();
             controller.status.set_text(&format!("Search failed: {error}"));
         }

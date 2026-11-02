@@ -108,8 +108,12 @@ impl ViewerController {
             state.page_height_points = 0.0;
             state.scale = DEFAULT_ZOOM;
             state.rotation = 0;
+            state.search_query.clear();
+            state.search_results.clear();
+            state.search_global_index = 0;
             state.search_highlights.clear();
             state.search_index = 0;
+            state.pending_search_rect = None;
         }
         self.status.set_text("Loading first page…");
         self.request_render(path, 0, DEFAULT_ZOOM, 0);
@@ -191,6 +195,68 @@ impl ViewerController {
         search_current_page(self);
     }
 
+    pub(crate) fn focus_global_search_result(&self, index: usize) {
+        let (target_page, target_rect, page_highlights, page_match_index, total, current_page, page_height_points, scale) = {
+            let state = self.state.borrow();
+            let total = state.search_results.len();
+            if total == 0 {
+                self.status.set_text("No search matches in this document.");
+                return;
+            }
+            let normalized_index = index % total;
+            let selected = state.search_results[normalized_index].clone();
+            let page_highlights = state
+                .search_results
+                .iter()
+                .filter(|entry| entry.page_index == selected.page_index)
+                .map(|entry| entry.rect)
+                .collect::<Vec<_>>();
+            let page_match_index = page_highlights
+                .iter()
+                .position(|rect| *rect == selected.rect)
+                .unwrap_or(0);
+            (
+                selected.page_index,
+                selected.rect,
+                page_highlights,
+                page_match_index,
+                total,
+                state.page_index,
+                state.page_height_points,
+                state.scale,
+            )
+        };
+
+        if current_page != target_page {
+            self.navigate_to(target_page);
+        }
+
+        {
+            let mut state = self.state.borrow_mut();
+            state.search_global_index = index % total;
+            state.search_highlights = page_highlights;
+            state.search_index = page_match_index;
+            state.pending_search_rect = if current_page == target_page {
+                None
+            } else {
+                Some(target_rect)
+            };
+        }
+
+        if current_page == target_page {
+            self.scroll_to_search_match(target_rect, page_height_points, scale);
+        }
+
+        let state = self.state.borrow();
+        self.status.set_text(&format!(
+            "Match {} of {} in document (page {}).",
+            state.search_global_index + 1,
+            total,
+            target_page + 1,
+        ));
+        self.area.queue_draw();
+    }
+
     pub(crate) fn scroll_to_search_match(&self, rect: (f64, f64, f64, f64), page_height_points: f64, scale: f64) {
         let target = search_scroll_target(rect, page_height_points, scale);
         let adjustment = self.scrolled.vadjustment();
@@ -202,57 +268,29 @@ impl ViewerController {
     }
 
     pub(crate) fn search_next_match(&self) {
-        let total = self.state.borrow().search_highlights.len();
+        let total = self.state.borrow().search_results.len();
         if total == 0 {
-            self.status.set_text("No search matches on this page.");
+            self.status.set_text("No search matches in this document.");
             return;
         }
         let next_index = {
             let state = self.state.borrow();
-            crate::viewer_state::next_search_index(state.search_index, total, 1)
+            crate::viewer_state::next_search_index(state.search_global_index, total, 1)
         };
-        let mut state = self.state.borrow_mut();
-        state.search_index = next_index;
-        let rect = state.search_highlights[state.search_index];
-        let page_height_points = state.page_height_points;
-        let scale = state.scale;
-        drop(state);
-        self.scroll_to_search_match(rect, page_height_points, scale);
-        let state = self.state.borrow();
-        self.status.set_text(&format!(
-            "Match {} of {} on page {}.",
-            state.search_index + 1,
-            total,
-            state.page_index + 1,
-        ));
-        self.area.queue_draw();
+        self.focus_global_search_result(next_index);
     }
 
     pub(crate) fn search_previous_match(&self) {
-        let total = self.state.borrow().search_highlights.len();
+        let total = self.state.borrow().search_results.len();
         if total == 0 {
-            self.status.set_text("No search matches on this page.");
+            self.status.set_text("No search matches in this document.");
             return;
         }
         let previous_index = {
             let state = self.state.borrow();
-            crate::viewer_state::next_search_index(state.search_index, total, -1)
+            crate::viewer_state::next_search_index(state.search_global_index, total, -1)
         };
-        let mut state = self.state.borrow_mut();
-        state.search_index = previous_index;
-        let rect = state.search_highlights[state.search_index];
-        let page_height_points = state.page_height_points;
-        let scale = state.scale;
-        drop(state);
-        self.scroll_to_search_match(rect, page_height_points, scale);
-        let state = self.state.borrow();
-        self.status.set_text(&format!(
-            "Match {} of {} on page {}.",
-            state.search_index + 1,
-            total,
-            state.page_index + 1,
-        ));
-        self.area.queue_draw();
+        self.focus_global_search_result(previous_index);
     }
 
     pub(crate) fn submit_print(&self) {
