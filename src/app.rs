@@ -8,6 +8,7 @@ use crate::navigation::{
 };
 use crate::printing::PrintService;
 use crate::rendering::{poll, present_page, request_render, schedule_prefetch, search_current_page};
+use crate::session::load_document_view;
 #[cfg(test)]
 use crate::session::{
     last_directory_for_home, last_window_geometry_for_home, newest_valid_recent_document,
@@ -114,9 +115,16 @@ impl ViewerController {
             state.search_highlights.clear();
             state.search_index = 0;
             state.pending_search_rect = None;
+            if let Some(saved) = load_document_view(&path) {
+                state.page_index = saved.page_index.max(0);
+                state.scale = crate::viewer_state::sanitize_scale(saved.scale);
+                state.rotation = crate::viewer_state::normalize_rotation(saved.rotation);
+                state.layout_mode = crate::viewer_state::LayoutMode::from_str(&saved.layout_mode);
+            }
         }
         self.status.set_text("Loading first page…");
-        self.request_render(path, 0, DEFAULT_ZOOM, 0);
+        let state = self.state.borrow();
+        self.request_render(path, state.page_index, state.scale, state.rotation);
     }
 
     pub(crate) fn navigate_to(&self, page_index: i32) {

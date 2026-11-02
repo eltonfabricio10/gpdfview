@@ -7,6 +7,7 @@ use gtk4::prelude::*;
 use crate::app::ViewerController;
 use crate::engine::{RenderResult, RenderedPage};
 use crate::viewer_state::apply_render_request;
+use crate::session::remember_document_view;
 
 pub(crate) fn request_render(
     controller: &ViewerController,
@@ -159,6 +160,15 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
     let rotation = controller.state.borrow().rotation;
     let generation = controller.state.borrow().generation;
     if let Some(path) = path {
+        let state = controller.state.borrow();
+        remember_document_view(
+            &path,
+            state.page_index,
+            state.scale,
+            state.rotation,
+            state.layout_mode.as_str(),
+        );
+        drop(state);
         controller.schedule_prefetch(path, page.page_index, page.page_count, scale, generation, rotation);
     }
 

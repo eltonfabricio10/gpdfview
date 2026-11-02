@@ -1,6 +1,15 @@
 use std::env;
 use std::fs;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct PersistedDocumentView {
+    pub page_index: i32,
+    pub scale: f64,
+    pub rotation: i32,
+    pub layout_mode: String,
+}
 
 pub fn session_storage_dir_for(home: &Path) -> PathBuf {
     let storage = home.join(".local/share/gpdfview");
@@ -149,4 +158,150 @@ pub fn load_favorite_documents() -> Vec<PathBuf> {
 
 pub fn is_favorite_document(path: &Path) -> bool {
     load_favorite_documents().iter().any(|favorite| favorite == path)
+}
+
+fn document_state_file(home: &Path) -> PathBuf {
+    session_storage_dir_for(home).join("document_state.txt")
+}
+
+fn document_state_key(path: &Path) -> String {
+    path.canonicalize()
+        .unwrap_or_else(|_| path.to_path_buf())
+        .to_string_lossy()
+        .to_string()
+}
+
+fn read_document_states(home: &Path) -> HashMap<String, PersistedDocumentView> {
+    let file = document_state_file(home);
+    let Ok(content) = fs::read_to_string(file) else {
+        return HashMap::new();
+    };
+
+    let mut states = HashMap::new();
+    for line in content.lines() {
+        let mut parts = line.split('\t');
+        let Some(path_key) = parts.next() else {
+            continue;
+        };
+        let Some(page_index) = parts.next().and_then(|value| value.parse::<i32>().ok()) else {
+            continue;
+        };
+        let Some(scale) = parts.next().and_then(|value| value.parse::<f64>().ok()) else {
+            continue;
+        };
+        let Some(rotation) = parts.next().and_then(|value| value.parse::<i32>().ok()) else {
+            continue;
+        };
+        let Some(layout_mode) = parts.next() else {
+            continue;
+        };
+        states.insert(
+            path_key.to_string(),
+            PersistedDocumentView {
+                page_index,
+                scale,
+                rotation,
+                layout_mode: layout_mode.to_string(),
+            },
+        );
+    }
+
+    states
+}
+
+fn write_document_states(home: &Path, states: &HashMap<String, PersistedDocumentView>) {
+    let file = document_state_file(home);
+    let mut lines = Vec::new();
+    for (path, state) in states {
+        lines.push(format!(
+            "{}\t{}\t{}\t{}\t{}",
+            path, state.page_index, state.scale, state.rotation, state.layout_mode
+        ));
+    }
+    lines.sort_unstable();
+    let _ = fs::write(file, lines.join("\n"));
+}
+
+pub fn remember_document_view_for_home(
+    home: &Path,
+    path: &Path,
+    page_index: i32,
+    scale: f64,
+    rotation: i32,
+    layout_mode: &str,
+) {
+    if layout_mode.trim().is_empty() {
+        return;
+    }
+    let mut states = read_document_states(home);
+    states.insert(
+        document_state_key(path),
+        PersistedDocumentView {
+            page_index,
+            scale,
+            rotation,
+            layout_mode: layout_mode.to_string(),
+        },
+    );
+    write_document_states(home, &states);
+}
+
+pub fn remember_document_view(
+    path: &Path,
+    page_index: i32,
+    scale: f64,
+    rotation: i32,
+    layout_mode: &str,
+) {
+    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    remember_document_view_for_home(
+        Path::new(&home),
+        path,
+        page_index,
+        scale,
+        rotation,
+        layout_mode,
+    );
+}
+
+pub fn load_document_view_for_home(home: &Path, path: &Path) -> Option<PersistedDocumentView> {
+    let states = read_document_states(home);
+    states.get(&document_state_key(path)).cloned()
+}
+
+pub fn load_document_view(path: &Path) -> Option<PersistedDocumentView> {
+    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    load_document_view_for_home(Path::new(&home), path)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn remembers_and_loads_per_document_view() {
+        let base = std::env::temp_dir().join(format!(
+            "gpdfview-docstate-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch available")
+                .as_nanos()
+        ));
+        let home = base.join("home");
+        let docs = home.join("docs");
+        let _ = fs::create_dir_all(&docs);
+        let doc = docs.join("sample.pdf");
+        let _ = fs::write(&doc, b"pdf");
+
+        remember_document_view_for_home(&home, &doc, 7, 1.25, 90, "continuous");
+        let restored = load_document_view_for_home(&home, &doc).expect("state should exist");
+
+        assert_eq!(restored.page_index, 7);
+        assert_eq!(restored.rotation, 90);
+        assert_eq!(restored.layout_mode, "continuous");
+        assert!((restored.scale - 1.25).abs() < 0.0001);
+
+        let _ = fs::remove_dir_all(&base);
+    }
 }

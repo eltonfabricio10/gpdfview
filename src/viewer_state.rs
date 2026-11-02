@@ -23,6 +23,22 @@ impl LayoutMode {
     pub fn next(self) -> Self {
         self.toggle()
     }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::SinglePage => "single",
+            Self::Continuous => "continuous",
+            Self::TwoPage => "two-page",
+        }
+    }
+
+    pub fn from_str(value: &str) -> Self {
+        match value {
+            "continuous" => Self::Continuous,
+            "two-page" => Self::TwoPage,
+            _ => Self::SinglePage,
+        }
+    }
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
