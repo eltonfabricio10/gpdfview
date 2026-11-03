@@ -1,640 +1,406 @@
 # gpdfview
 
-### A fast, lightweight and native PDF viewer for Linux
+**A fast, native PDF viewer for Linux, written in Rust with GTK4 and libadwaita.**
 
-**gpdfview** is an open-source PDF viewer project written in **Rust**, built with **GTK4** and **libadwaita**, inspired by the functionality, efficiency and workflow of [qpdfview](https://github.com/lumina-desktop/qpdfview).
+[![Language](https://img.shields.io/badge/language-Rust-orange)](https://www.rust-lang.org/)
+[![GUI](https://img.shields.io/badge/UI-GTK4-blue)](https://www.gtk.org/)
+[![PDF engine](https://img.shields.io/badge/PDF-Poppler-green)](https://poppler.freedesktop.org/)
+[![License](https://img.shields.io/badge/license-MIT-lightgrey)](LICENSE)
 
-The project's primary goal is to reproduce the core functionality and user experience of qpdfview while adopting a modern native GTK architecture.
+`gpdfview` is a Linux PDF viewer inspired by the workflow and practical feature set of [qpdfview](https://launchpad.net/qpdfview). It reimplements the application layer in Rust and uses GTK4/libadwaita for its desktop interface and Poppler for PDF processing.
 
-Performance is a fundamental requirement. gpdfview is being designed to provide fast document opening, responsive navigation, efficient rendering and reliable printing, including when working with large PDF documents containing hundreds or thousands of pages.
+The project is focused on three requirements: **fast access to the first page, responsive navigation through long documents, and dependable printing**. It uses on-demand page rendering, a dedicated rendering worker, bounded caches and a page-by-page printing fallback instead of rasterizing an entire document in memory.
 
-> **Project status:** Active alpha with stable modular core. The current build supports multi-document tabs, page navigation, zoom, fit-width/fit-page, rotation, in-page text search with match navigation, session recovery (recent files, favorites and last directory), layout modes (single/continuous/two-page), and printing through CUPS with a page-by-page Cairo fallback. The project is still below full qpdfview parity, mainly missing full thumbnails/outlines integration, advanced document settings, annotations/forms parity and deeper comparative performance validation.
+> **Project status: active alpha.** This repository contains a working application with multi-document tabs, several page layouts, document-wide text search, thumbnails, outlines, session persistence and CUPS printing. It is not yet a complete qpdfview replacement. The feature list and limitations below describe the implementation in this repository snapshot; they are not a claim of release-grade stability or complete feature parity.
 
----
+## Contents
 
-## Table of Contents
-
-- [Project Overview](#project-overview)
-- [Goals and Philosophy](#goals-and-philosophy)
-- [Why gpdfview?](#why-gpdfview)
-- [Core Technologies](#core-technologies)
+- [Project goals](#project-goals)
+- [Features](#features)
 - [Architecture](#architecture)
-- [Performance Strategy](#performance-strategy)
-- [PDF Rendering](#pdf-rendering)
-- [Printing Architecture](#printing-architecture)
-- [Planned Features](#planned-features)
-- [User Interface](#user-interface)
-- [Project Structure](#project-structure)
-- [Development Roadmap](#development-roadmap)
-- [Performance Benchmarks](#performance-benchmarks)
-- [Build Requirements](#build-requirements)
-- [Development Guidelines](#development-guidelines)
-- [Licensing](#licensing)
+- [Performance and memory strategy](#performance-and-memory-strategy)
+- [Printing](#printing)
+- [Known limitations and next steps](#known-limitations-and-next-steps)
+- [Technology stack](#technology-stack)
+- [Requirements](#requirements)
+- [Build and run](#build-and-run)
+- [Tests, benchmarks and packaging](#tests-benchmarks-and-packaging)
+- [Project structure](#project-structure)
+- [Application data](#application-data)
+- [License](#license)
 - [Contributing](#contributing)
 
----
+## Project goals
 
-## Project Overview
+### Preserve a practical PDF workflow
 
-gpdfview aims to become a native Linux PDF viewer that combines the efficiency of established PDF rendering technologies with the advantages of modern GTK applications.
+The intention is to retain the useful parts of qpdfview's workflow: multiple documents, tab-based navigation, a compact toolbar, a sidebar, search, page layouts, keyboard shortcuts and printing. The interface is adapted to GTK4 rather than attempting to reproduce Qt widgets one-for-one.
 
-Rather than creating a new PDF rendering engine, the project intends to use **Poppler** as its PDF processing backend.
+### Keep the interface responsive
 
-Rust will handle application logic, document management, concurrency, caching and integration with the graphical interface.
+Opening a document should not require rendering every page. The current page is requested first, rendered outside the GTK main thread and presented when ready. Adjacent pages can be prefetched to improve subsequent navigation.
 
-GTK4 and libadwaita will provide the native desktop experience.
+### Use established PDF technology
 
-The application is designed around three fundamental principles:
+The application does not implement a PDF parser. Poppler handles PDF loading, page rendering, text search, metadata and outline extraction. Rust coordinates the application state, workers, caches and GTK integration.
 
-1. **Performance first:** document opening, navigation and printing must remain fast and efficient.
-2. **Functional fidelity:** preserve the useful features and workflows of qpdfview.
-3. **Native integration:** provide a modern Linux desktop application without depending on Qt.
+### Measure performance instead of assuming it
 
-## Goals and Philosophy
+Rust alone does not guarantee a faster viewer. Performance comparisons must use the same PDFs, machine, display session and comparable measurement points. The existing benchmark artifacts are preliminary; see [Tests, benchmarks and packaging](#tests-benchmarks-and-packaging).
 
-### Performance is not optional
+## Features
 
-A PDF viewer should not require users to wait for an entire document to be processed before displaying its first page.
+The following table reflects the source code in this repository, not the older planning checklists that may still be present in some auxiliary documents.
 
-gpdfview will prioritize:
-
-- Fast document initialization.
-- Immediate rendering of the current page.
-- Asynchronous page rendering.
-- Intelligent prefetching.
-- Memory-efficient page caching.
-- Responsive navigation.
-- Efficient printing of large documents.
-
-### Faithfulness to qpdfview
-
-The project is not intended to be a radically simplified PDF reader.
-
-Its goal is to preserve the practical functionality of qpdfview, including its document navigation model, tabs, toolbar, sidebar, keyboard shortcuts, search capabilities and printing workflow.
-
-The graphical interface will be adapted to GTK4 and libadwaita without unnecessarily changing familiar application behavior.
-
-### Native Linux experience
-
-gpdfview will be developed specifically for Linux desktop environments.
-
-The application will use GTK4 and libadwaita components, GIO integration and native desktop services wherever appropriate.
-
----
-
-## Why gpdfview?
-
-qpdfview demonstrates that a desktop PDF viewer can remain lightweight while providing advanced document navigation and printing capabilities.
-
-gpdfview seeks to preserve these qualities while replacing its Qt-based interface with a Rust and GTK architecture.
-
-| Aspect | qpdfview | gpdfview |
+| Area | Current implementation | Notes |
 |---|---|---|
-| Programming language | C++ | Rust |
-| GUI framework | Qt | GTK4 |
-| Desktop integration | Qt ecosystem | GTK / libadwaita |
-| PDF backend | Poppler | Poppler |
-| Rendering | Poppler / Qt integration | Poppler / Cairo |
-| Concurrency | Existing implementation | Rust-managed worker architecture |
-| Printing | Native printing integration | CUPS / IPP integration |
-| Application architecture | Existing Qt architecture | Modular Rust architecture |
-
-The objective is not to assume that Rust automatically makes the application faster.
-
-Performance will be measured against qpdfview using identical documents and comparable system configurations.
-
----
-
-## Core Technologies
-
-| Technology | Responsibility |
-|---|---|
-| Rust | Application logic, state management and concurrency |
-| GTK4 | Graphical interface |
-| libadwaita | Native desktop components |
-| Poppler GLib | PDF interpretation and rendering |
-| Cairo | Graphics and rendering surfaces |
-| GLib / GIO | Event loop, asynchronous operations and desktop integration |
-| CUPS / IPP | Printing infrastructure |
-| SQLite | Optional persistent data storage |
-| GSettings | Application preferences |
-
-### PDF Engine: Poppler
-
-Poppler is the primary PDF backend.
-
-It provides established PDF processing capabilities, including:
-
-- Document loading.
-- Page rendering.
-- Text extraction.
-- Text searching.
-- Document metadata.
-- Page information.
-- Document outlines.
-- PDF permissions and related functionality.
-
-The project will use Rust bindings where available and direct FFI integration when necessary.
-
-The PDF engine must remain independent of the graphical interface.
-
-This separation will make it possible to evolve rendering, caching and printing without coupling those operations to GTK widgets.
-
----
+| PDF documents | Open local PDF files | Non-local URIs and other document formats are not supported by the current application flow. |
+| Tabs | Multiple document tabs, close buttons and restore-last-closed-tab action | Each tab has its own viewer state and worker pair. |
+| Navigation | Previous/next page and direct page selection | Page numbering shown to the user starts at 1. |
+| Zoom | Zoom in/out, fit width and fit page | Zoom step is configurable. |
+| Page layouts | Single page, continuous and two-page | Layout choice can be saved as the default. |
+| Split view | Horizontal or vertical split, with optional synchronization | This is a separate viewing mode from the two-page layout. |
+| Rotation | Rotate pages left or right | Rotation is persisted per document. |
+| Text search | Search across the current document, highlight matches and move next/previous | Results include page references and can be selected from the sidebar. |
+| Sidebar | Page thumbnails, PDF outline, app bookmarks, search results, recent files and favorites | Thumbnails are shown around the current page and use a separate bounded cache. |
+| Bookmarks | Navigate PDF outline entries and create/remove application page bookmarks | Application bookmarks are stored separately from the PDF's embedded outline. |
+| Document information | Display basic PDF metadata and page count | Metadata availability depends on the source PDF. |
+| Session | Restore the last document, last directory, window geometry/state and per-document view settings | Per-document state includes page, zoom, rotation and layout. |
+| Preferences | Default layout, split synchronization, zoom increment and a set of configurable shortcuts | This is a focused preferences dialog, not yet a full qpdfview-equivalent settings system. |
+| Display modes | Fullscreen and presentation mode | Presentation mode uses the current document viewer. |
+| Printing | CUPS submission through `lp`, with page range, copies, orientation and scale | Direct PDF submission is attempted first; a Poppler/Cairo PDF fallback is used if it fails. |
 
 ## Architecture
 
-The application will follow a modular architecture.
+The application is divided into focused Rust modules. GTK widgets and viewer state are coordinated by the application layer, while Poppler and Cairo handle document operations and rendering.
 
 ```text
-                 +----------------------+
-                 |       GTK4 UI        |
-                 |      libadwaita      |
-                 +----------+-----------+
-                            |
-                 +----------v-----------+
-                 |   Application Core   |
-                 |        Rust          |
-                 +----------+-----------+
-                            |
-           +----------------+----------------+
-           |                |                |
-   +-------v------+ +-------v------+ +-------v------+
-   | Document     | | Viewer       | | Printing     |
-   | Management   | | Controller   | | Management   |
-   +-------+------+ +-------+------+ +-------+------+
-           |                |                |
-           +----------------+----------------+
-                            |
-                 +----------v-----------+
-                 |      PDF Engine      |
-                 |     Poppler GLib     |
-                 +----------+-----------+
-                            |
-                 +----------v-----------+
-                 |   Cairo / GIO / OS   |
-                 +----------------------+
+                      GTK4 / libadwaita
+                              |
+                    Application and Window
+                              |
+             +----------------+----------------+
+             |                |                |
+        Viewer state     Document tabs     UI commands
+             |                |                |
+             +----------------+----------------+
+                              |
+                 Rendering and navigation
+                              |
+                    PDF rendering worker
+                              |
+                         Poppler
+                              |
+                         Cairo
+
+          Separate worker: printing -> CUPS (`lp`)
 ```
+
+### Rendering pipeline
+
+1. A navigation, zoom or rotation action creates a render request for the selected document and page.
+2. The rendering worker loads or reuses the corresponding Poppler document and renders the requested page.
+3. The result is returned to the GTK application through a message channel.
+4. The UI checks the request generation and document state before presenting the surface. Outdated results are discarded.
+5. The rendered surface is inserted into the LRU page cache. Adjacent pages may be queued for prefetching.
+
+The worker keeps the active Poppler document while processing requests for the same file. Poppler access is guarded by a shared lock to avoid concurrent access through the current binding strategy.
 
 ### Main components
 
-**Application Core**
+| Module | Responsibility |
+|---|---|
+| `app.rs` | Application lifecycle, viewer controller, document state and print dialog flow |
+| `window.rs` | Main window, toolbar, menus, tab container, drawing area and event wiring |
+| `engine.rs` | Poppler document access, page rendering, thumbnails, search, outline and document metadata |
+| `rendering.rs` | Render request coordination, result handling and adjacent-page prefetch |
+| `cache.rs` | Byte-accounted LRU cache used for rendered pages and thumbnails |
+| `navigation.rs` | Page navigation, zoom, fit modes, rotation and presentation behavior |
+| `viewer_state.rs` | Viewer state, layout modes, split-view state and search occurrences |
+| `document_tabs.rs` | Tab bookkeeping and recently closed document paths |
+| `document_actions.rs` | File selection and opening documents in tabs |
+| `sidebar.rs` | Thumbnails, PDF outline, application bookmarks, search results, recents and favorites |
+| `session.rs` | Preferences, recent files, favorites, bookmarks, window state and per-document persistence |
+| `printing.rs` | Print worker, CUPS submission and generated-PDF fallback |
+| `dialogs.rs` | Preferences and document-properties dialogs |
+| `keyboard.rs` | Shortcut matching and action resolution |
+| `ui_commands.rs` | Shared command dispatch for menu and toolbar actions |
+| `layout.rs` | Page geometry and Cairo search-highlight helpers |
+| `poppler_lock.rs` | Shared synchronization for Poppler access |
 
-Responsible for application lifecycle, window management, document coordination, preferences and global state.
+## Performance and memory strategy
 
-**Document Manager**
+Large-document handling is a primary design constraint.
 
-Responsible for opening, closing and tracking PDF documents, metadata, permissions and document-specific settings.
+### On-demand rendering
 
-**PDF Engine**
+The viewer requests the page needed for the current interaction. It does not intentionally render every page when a PDF is opened.
 
-Provides a unified interface to Poppler, including page access, rendering, text extraction and document information.
+### Background page rendering
 
-**Viewer Controller**
+Main-page rendering runs in a dedicated worker named `gpdfview-renderer`. The GTK main thread receives completed results and updates the interface. A generation identifier prevents a late result from replacing a newer page after rapid navigation.
 
-Manages page navigation, zoom, layout, scrolling, page positioning and visible page state.
+### Adjacent-page prefetch
 
-**Rendering System**
+The renderer can queue the page before and after the current page. A new primary request clears obsolete prefetch work so navigation remains the priority.
 
-Coordinates background rendering, task priorities, caching and prefetching.
+### Bounded caches
 
-**Printing System**
+The current source defines these cache budgets:
 
-Handles print configuration, document submission, page ranges and rendering fallbacks.
+| Cache | Budget | Purpose |
+|---|---:|---|
+| Main rendered-page cache | 128 MiB | Reuse pages during navigation and zoom/layout operations |
+| Sidebar thumbnail cache | 24 MiB | Keep small page previews without retaining unbounded image data |
 
-**User Interface**
+Both use an LRU eviction policy with byte accounting. A rendered page larger than the cache budget is not inserted into that cache.
 
-Contains the application window, toolbar, tabs, sidebar, search interface and dialogs.
+### Poppler synchronization
 
----
+Poppler operations are protected by a shared mutex. This favors safe, serialized access with the current binding and worker design. It is not a claim that all PDF operations currently execute concurrently.
 
-## Performance Strategy
+### Current performance caveats
 
-Performance is one of the project's most important engineering requirements.
+The main page-render path is asynchronous, but not every PDF operation has been moved off the UI thread. In particular, document-wide text search and some sidebar population paths (including thumbnail and outline requests) still perform work synchronously. These paths should be profiled with very large or complex PDFs and are candidates for further worker-based execution.
 
-### 1. On-demand rendering
+The application must continue to avoid whole-document rasterization. Memory use should remain bounded by the visible workload, caches and current rendering/printing operation.
 
-The application must never render every page simply because a document has been opened.
+## Printing
 
-Only the current page and pages required for immediate navigation should be rendered initially.
+Printing is handled by a separate worker so the GTK main loop is not responsible for submitting or rendering the print job.
 
-### 2. Asynchronous rendering
+The current sequence is:
 
-Page rendering must run outside the GTK main thread.
+1. Validate that the source path points to a local file.
+2. Attempt to submit the original PDF to the default CUPS printer using the `lp` command.
+3. Pass the selected page range, number of copies, orientation and scale to CUPS.
+4. If direct PDF submission fails, render the requested pages sequentially with Poppler into a temporary Cairo PDF surface.
+5. Submit that generated PDF to CUPS and remove the temporary file when the operation ends.
 
-The main thread should remain responsible for UI updates and GTK object interaction.
+The fallback processes pages one at a time; it does not create a full-document bitmap in memory. A single print job is processed at a time by the current print service.
 
-Background workers will perform rendering and deliver results through appropriate GLib channels or main-context integration.
+**Printing requirements:** CUPS must be installed and configured, and the `lp` command must be available in `PATH`. The current UI targets the default printer; printer selection and broader printer-specific options are not yet implemented.
 
-### 3. Intelligent page caching
+## Known limitations and next steps
 
-The viewer will use an LRU cache with memory limits.
+The project is functional, but several areas need additional engineering and validation before it can be considered a mature replacement for qpdfview.
 
-The cache should prioritize:
+### Current limitations
 
-- Currently visible pages.
-- Recently viewed pages.
-- Adjacent pages.
-- Pages likely to be needed during continuous scrolling.
+- Only local PDF files are supported. DjVu, PostScript and other formats are outside the current implementation.
+- PDF annotations and interactive form editing are not implemented.
+- Search, thumbnail generation and outline loading need further profiling and asynchronous handling for very large documents.
+- The sidebar is a combined panel, not a set of independently dockable qpdfview-style panels.
+- The preferences dialog covers core options only; it does not reproduce qpdfview's full configuration surface.
+- Printing uses the default CUPS destination and does not yet expose printer selection or every backend-specific setting.
+- Session restoration covers the last document and per-document view state; full restoration of an arbitrary multi-tab workspace still needs validation.
+- Full comparative benchmarks for first visible page, navigation latency, peak memory and long-document printing have not yet been established.
 
-Old or unused rendered surfaces should be released when memory limits are reached.
+### Recommended engineering priorities
 
-### 4. Predictive prefetching
+1. Move full-document search, thumbnail generation and outline extraction to cancellable background tasks.
+2. Replace periodic sidebar refresh work with more targeted state-change notifications where possible.
+3. Validate per-tab session restoration and tab lifecycle under stress.
+4. Expand print validation across CUPS backends and printers, including fallback behavior and page-range edge cases.
+5. Establish reproducible qpdfview-versus-gpdfview measurements using identical PDFs and a graphical desktop session.
+6. Continue closing functional parity gaps such as annotations, forms and more complete preferences.
 
-The application should anticipate navigation.
+## Technology stack
 
-When viewing a page, nearby pages may be rendered in advance, with priority adjusted according to navigation direction and user activity.
+| Technology | Role |
+|---|---|
+| Rust 2021 | Application logic, state and worker coordination |
+| GTK4 | Linux graphical interface |
+| libadwaita | GTK desktop application components |
+| Poppler / `poppler-rs` | PDF loading, rendering, text search and document structure |
+| Cairo | Page surfaces, thumbnails and PDF printing fallback |
+| GLib / GIO | Main-loop integration and local file handling |
+| CUPS (`lp`) | Print submission |
 
-### 5. Task cancellation
+The Rust dependency versions are defined in `Cargo.toml` and pinned by `Cargo.lock`. The GUI is currently built with GTK4 features `v4_10` and `v4_12`; the native development packages must be compatible with those features.
 
-Rendering tasks that are no longer useful should be cancelled or have their results discarded.
+## Requirements
 
-For example, when a user jumps from page 10 to page 800, pending work for intermediate pages should not unnecessarily consume CPU and memory.
+A Linux desktop environment with GTK4 support is required to run the graphical application. Development packages are needed to compile the Rust bindings and their native dependencies.
 
-### 6. Memory management
+### Arch Linux / BigLinux
 
-The application must avoid:
+```bash
+sudo pacman -S --needed \
+  base-devel \
+  rust \
+  cargo \
+  gtk4 \
+  libadwaita \
+  poppler-glib \
+  cairo \
+  cups
+```
 
-- Loading all page images into RAM.
-- Generating unnecessary full-document previews.
-- Retaining obsolete rendering surfaces.
-- Running unrestricted rendering workers.
-- Blocking the UI during document processing.
+Package names can differ on other distributions. Install the equivalent GTK4, libadwaita, Poppler GLib, Cairo and CUPS development packages before building.
 
-The cache should be configurable and measured in memory usage rather than only in the number of pages.
+## Build and run
 
----
+Clone the repository and enter its directory:
 
-## PDF Rendering
+```bash
+git clone https://github.com/eltonfabricio10/gpdfview.git
+cd gpdfview
+```
 
-Poppler will handle PDF interpretation and page rendering.
+Build the application:
 
-Cairo will be used where appropriate for graphics surfaces and integration with the GTK drawing pipeline.
+```bash
+cargo build --locked --release --bin gpdfview
+```
 
-The rendering system should support:
+Run without opening a document:
 
-- Different zoom levels.
-- High-DPI displays.
-- Continuous scrolling.
-- Single-page navigation.
-- Two-page layouts.
-- Page rotation.
-- Text selection.
-- Search highlighting.
-- Thumbnail generation.
+```bash
+cargo run --bin gpdfview
+```
 
-Rendering quality and speed must be evaluated with real-world PDF files, including documents containing large images, complex fonts, transparency and mixed page dimensions.
+Open a local PDF:
 
----
+```bash
+cargo run --bin gpdfview -- /path/to/document.pdf
+```
 
-## Printing Architecture
+The application also accepts PDF files through the desktop application's file-open integration.
 
-Printing is a first-class requirement.
+## Tests, benchmarks and packaging
 
-The project must preserve the efficient printing behavior expected from qpdfview, especially for large documents.
+### Unit tests
 
-### Preferred printing path: native PDF submission
+Run the Rust test suite:
 
-When supported by the selected printing backend and queue, the application should submit the original PDF rather than rasterizing every page.
+```bash
+cargo test --locked
+```
 
-This approach can preserve:
+Check formatting and linting:
 
-- Vector graphics.
-- Embedded fonts.
-- Text quality.
-- Original image resolution.
-- Document fidelity.
+```bash
+cargo fmt --check
+cargo clippy --locked --all-targets -- -D warnings
+```
 
-### Fallback printing path: page rendering
+The tests are colocated with the modules and cover areas such as rendering helpers, PDF engine behavior, cache eviction, viewer state, session persistence, tab bookkeeping and print fallback generation.
 
-When direct PDF submission is unavailable or unsuitable, gpdfview should use Poppler and Cairo to process pages individually.
+### Benchmark scripts
 
-The implementation must avoid rendering the entire document into memory.
+The repository includes:
 
-### Printing requirements
+- `measure_qpdfview.sh` — helper for recording a qpdfview baseline.
+- `scripts/benchmark.sh` — launches gpdfview against the PDF fixtures and records a basic startup/smoke-test report.
+- `BENCHMARK_REFERENCE.md` — reference hardware, software and test-document information.
+- `measurements/` — recorded benchmark artifacts.
 
-- Printer selection.
-- Page range selection.
-- Copies.
-- Orientation.
-- Paper size.
-- Scaling.
-- Margins.
-- Print quality where supported.
-- Progress and error reporting.
+Run the gpdfview smoke benchmark from a graphical session:
 
-The actual printing path must be validated against the capabilities of the installed CUPS/IPP backend.
+```bash
+./scripts/benchmark.sh
+```
 
----
+**Important measurement limitation:** the current script waits approximately one second and records whether the launched process remains alive. It does not instrument the moment the first page becomes visible, and its current RSS sampling is not a reliable measurement of the application's complete memory use. Its output must not be compared directly with qpdfview's recorded first-page timings. A proper benchmark should instrument the application process and the first rendered page in an active X11/Wayland session.
 
-## Planned Features
+The stored qpdfview baseline records roughly 329–333 ms and 113–117 MB RSS for the small reference PDFs. The current gpdfview smoke-test rows report a process-start status around one second, not an equivalent first-page measurement. These figures do **not** establish that either application is faster or more memory-efficient.
 
-The following list describes the intended feature set.
+### Linux release archive
 
-### Essential features — P0
+Build and package the application:
 
-- [x] Open PDF documents.
-- [ ] Open multiple documents.
-- [ ] Tabbed document interface.
-- [x] Page navigation.
-- [x] Zoom controls.
-- [ ] Fit page.
-- [x] Fit width.
-- [ ] Continuous scrolling.
-- [ ] Single-page layout.
-- [ ] Two-page layout.
-- [ ] Page rotation.
-- [ ] Text search.
-- [ ] Search result highlighting.
-- [ ] Document thumbnails.
-- [ ] Document outline and bookmarks.
-- [x] PDF printing.
-- [ ] Basic session restoration.
+```bash
+./scripts/package_release.sh
+```
 
-### Advanced features — P1
+The script creates:
 
-- [ ] Fullscreen mode.
-- [ ] Presentation mode.
-- [ ] Document properties.
-- [ ] Recent documents.
-- [ ] Favorites.
-- [ ] Per-document preferences.
-- [ ] Configurable keyboard shortcuts.
-- [ ] PDF annotations.
-- [ ] Interactive forms.
-- [ ] Advanced navigation options.
+```text
+dist/gpdfview-linux-x86_64.tar.gz
+```
 
-### Additional features — P2
+The archive contains the release binary, `README.md` and `LICENSE`. The script currently targets the host architecture and is not a cross-compilation or AppImage/Flatpak packaging system.
 
-- [ ] SyncTeX integration.
-- [ ] Additional document format backends.
-- [ ] Extended desktop integration.
-- [ ] Advanced customization.
-
-Feature availability will depend on the capabilities of the selected backend and the results of implementation and compatibility testing.
-
-The current prototype handles one local PDF at a time and prints to the default CUPS destination. The local CUPS filter chain was exercised without submitting a job; output from a physical printer and comparative qpdfview measurements are still to be verified.
-
----
-
-## User Interface
-
-The interface will retain the familiar workflow of qpdfview while adopting GTK4 and libadwaita.
-
-The first prototype currently provides an open action, page navigation, zoom controls, fit-to-width, a central page view and a status area. Tabs, the sidebar and the remaining controls are planned for later milestones.
-
-Long-term layout:
-
-- Header bar with document tabs and window controls.
-- Toolbar with navigation, zoom, search and printing.
-- Sidebar with thumbnails, document outline and bookmarks.
-- Central PDF viewing area.
-- Status bar with page number, total pages and zoom level.
-- Context menus and keyboard shortcuts.
-
-The interface should prioritize usability, responsiveness and consistency with modern GTK desktop applications.
-
-A modern appearance must not come at the expense of functionality.
-
----
-
-## Project Structure
-
-Current first-milestone source tree:
+## Project structure
 
 ```text
 gpdfview/
 ├── Cargo.toml
 ├── Cargo.lock
-├── README.md
 ├── LICENSE
-├── src/
-│   ├── main.rs
-│   ├── app.rs
-│   ├── engine.rs
-│   ├── cache.rs
-│   └── printing.rs
-└── tests embedded alongside the Rust modules
+├── README.md
+├── BENCHMARK_REFERENCE.md
+├── PARITY_MATRIX.md
+├── NEW_FEATURE_ROADMAP.md
+├── QPDFVIEW_PARITY_BLOCK_PLAN.md
+├── scripts/
+│   ├── benchmark.sh
+│   └── package_release.sh
+├── measurements/
+├── tests/
+│   └── fixtures/
+└── src/
+    ├── main.rs
+    ├── app.rs
+    ├── window.rs
+    ├── engine.rs
+    ├── rendering.rs
+    ├── cache.rs
+    ├── navigation.rs
+    ├── viewer_state.rs
+    ├── document_tabs.rs
+    ├── document_actions.rs
+    ├── sidebar.rs
+    ├── session.rs
+    ├── printing.rs
+    ├── dialogs.rs
+    ├── keyboard.rs
+    ├── ui_commands.rs
+    ├── layout.rs
+    ├── ui_helpers.rs
+    ├── poppler_lock.rs
+    └── bin/
+        └── test_poppler.rs
 ```
 
-The modules deliberately keep GTK state on the main thread, with Poppler document access isolated to its worker.
+## Application data
 
----
+User preferences and session data are stored locally under:
 
-## Development Roadmap
-
-Development will be divided into eight phases.
-
-| Phase | Description | Estimated time |
-|---|---|---|
-| 1 | qpdfview source analysis and architectural mapping | 3–5 days |
-| 2 | Rust, GTK4 and Poppler foundation | 4–7 days |
-| 3 | PDF engine integration | 5–8 days |
-| 4 | Rendering, cache and performance | 5–8 days |
-| 5 | Navigation and reading features | 5–8 days |
-| 6 | Printing implementation | 5–8 days |
-| 7 | Functional parity and advanced features | 7–12 days |
-| 8 | Testing, packaging and stabilization | 4–7 days |
-
-**Estimated initial development time: 38–63 days.**
-
-This is an initial engineering estimate, not a delivery commitment. Actual duration will depend on the source-code analysis, backend capabilities and compatibility requirements.
-
-### First development milestone — in progress
-
-The first milestone should be a working prototype capable of:
-
-1. Opening large PDF files.
-2. Displaying the first page quickly.
-3. Navigating through thousands of pages.
-4. Zooming without blocking the interface.
-5. Rendering pages asynchronously.
-6. Managing a bounded page cache.
-7. Printing documents efficiently.
-
-The prototype must be benchmarked against qpdfview before the project expands into advanced functionality.
-
----
-
-## Performance Benchmarks
-
-Performance comparisons are mandatory.
-
-Both applications should be tested with the same documents, hardware, operating system, Poppler version and printing configuration whenever possible.
-
-### Benchmark test set
-
-| Document | Purpose |
-|---|---|
-| 10-page PDF | Basic opening performance |
-| 500-page PDF | Navigation and memory |
-| 2,000-page PDF | Large document handling |
-| 5,000-page PDF | Scalability and stability |
-| 500 MB PDF | Memory and I/O behavior |
-| Image-heavy PDF | Rendering performance |
-| Font-heavy PDF | Typography and rendering |
-| Password-protected PDF | Authentication |
-| 1,000-page PDF | Printing performance |
-
-### Metrics
-
-- Time to first visible page.
-- Total document initialization time.
-- Page navigation latency.
-- Zoom response time.
-- Text search latency.
-- RAM usage at idle.
-- Peak RAM usage.
-- CPU usage during rendering.
-- Cache hit rate.
-- Print submission time.
-- Total print processing time.
-
-The primary goal is to avoid significant performance regressions compared with qpdfview.
-
-Absolute performance targets should be defined after measuring the reference application on the target hardware.
-
----
-
-## Build Requirements
-
-The development environment requires:
-
-- Rust toolchain and Cargo.
-- GTK4 development libraries.
-- libadwaita development libraries.
-- Poppler GLib development libraries.
-- Cairo development libraries.
-- GLib and GIO.
-- CUPS development libraries where required.
-
-### Example dependencies on Arch Linux / BigLinux
-
-```bash
-sudo pacman -S \
-    rust \
-    cargo \
-    gtk4 \
-    libadwaita \
-    poppler-glib \
-    cairo \
-    glib2 \
-    cups
+```text
+~/.local/share/gpdfview/
 ```
 
-Additional development packages may be required depending on the selected Rust bindings and build configuration.
+This directory is used for settings, recent documents, favorites, page bookmarks, per-document view state, last-directory information and window/session state. The current application does not need a network service to open or view local PDF files.
 
-### Build
+## License
 
-```bash
-cargo build
-```
+The repository's top-level [`LICENSE`](LICENSE) file declares the project under the **MIT License**. Third-party libraries retain their own licenses and notices; review the relevant dependency terms when preparing redistributed binaries or source bundles.
 
-Run the app:
-
-```bash
-cargo run
-```
-
-Run the unit and PDF integration tests:
-
-```bash
-cargo test
-cargo clippy --all-targets -- -D warnings
-```
-
-The application currently needs Rust 1.92 or newer, GTK4 4.10 or newer, libadwaita 1.4 or newer, Poppler GLib 26.1 or newer, Cairo, and a CUPS `lp` client for printing. Native package names vary by distribution; Arch Linux/BigLinux provide the dependencies as `gtk4`, `libadwaita`, `poppler-glib`, `cairo`, and `cups`.
-
----
-
-## Development Guidelines
-
-### Rust
-
-- Prefer safe Rust whenever possible.
-- Keep unsafe FFI code isolated and documented.
-- Define clear ownership rules for native objects.
-- Avoid unnecessary allocations and copies.
-- Use explicit error handling.
-- Keep modules focused and independently testable.
-
-### GTK4
-
-- Keep GTK operations on the main thread.
-- Avoid blocking the GLib main loop.
-- Use GTK-native actions and shortcuts.
-- Separate UI state from PDF processing.
-- Prefer native GTK components where appropriate.
-
-### PDF engine
-
-- Do not implement PDF parsing from scratch.
-- Keep Poppler integration isolated.
-- Validate backend capabilities before implementing dependent features.
-- Avoid rendering pages that are not needed.
-
-### Performance
-
-- Benchmark before optimizing.
-- Measure memory usage.
-- Limit background concurrency.
-- Cancel obsolete tasks.
-- Avoid full-document rasterization.
-- Test with large and complex documents.
-
-### Code quality
-
-- Use `cargo fmt`.
-- Use `cargo clippy`.
-- Add unit and integration tests.
-- Document public modules.
-- Keep dependencies justified and minimal.
-
----
-
-## Licensing
-
-The project's final license must be established after reviewing the licensing obligations of the reference implementation and all selected dependencies.
-
-The qpdfview source code and Poppler have GPL licensing considerations.
-
-Before distributing gpdfview binaries or source code, the project must verify:
-
-- Applicable GPL obligations.
-- Copyright and attribution requirements.
-- Third-party license notices.
-- Distribution of corresponding source code where required.
-- Compatibility of all dependencies and bindings.
-
-The final license declaration should be included in the repository's `LICENSE` file.
-
----
+qpdfview is an inspiration for the application's workflow and feature goals. The project should preserve appropriate attribution and must not copy source code or assets without satisfying their applicable license terms.
 
 ## Contributing
 
-Contributions are welcome once the initial architecture and development workflow are established.
+Contributions are welcome, particularly in these areas:
 
-Areas where contributions may be useful include:
+- Rust, GTK4 and libadwaita application development.
+- Poppler integration and safe FFI boundaries.
+- Rendering performance, memory profiling and cancellation.
+- Search, thumbnails, outlines and large-document navigation.
+- CUPS printing and print fallback validation.
+- Automated tests, accessibility and Linux packaging.
 
-- Rust and GTK4 development.
-- Poppler integration.
-- PDF rendering.
-- Printing and CUPS integration.
-- Performance profiling.
-- UI design.
-- Testing with large PDF documents.
-- Packaging for Linux distributions.
+Before submitting a substantial change:
 
-Before implementing major features, contributors should discuss the architecture and intended behavior to avoid unnecessary duplication or incompatible approaches.
+1. Explain the user-visible behavior and affected modules.
+2. Keep GTK widget operations on the main thread.
+3. Keep PDF processing behind the engine boundary.
+4. Avoid whole-document rasterization and unbounded image caches.
+5. Add tests for state transitions and failure cases.
+6. Run `cargo fmt`, `cargo test` and `cargo clippy` where the development environment permits.
+7. Update this README and the parity/roadmap documents when implementation status changes.
 
----
+## Project vision
 
-## Project Vision
-
-**gpdfview aims to combine the proven efficiency of qpdfview with the safety and modularity of Rust and the native desktop integration of GTK4/libadwaita.**
-
-The project will prioritize performance, functional completeness, memory efficiency and reliable printing.
-
-The ultimate objective is simple:
-
-**A modern native Linux PDF viewer that remains as fast and practical as the application that inspired it.**
+**gpdfview aims to combine qpdfview's practical document workflow with a modern Rust and GTK4 application architecture.** Its success should be measured by the quality of its rendering, responsiveness, memory behavior, printing and functional completeness—not by the language or toolkit alone.
