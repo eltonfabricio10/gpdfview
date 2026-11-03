@@ -1,5 +1,8 @@
 # Etapa 2: Prova Técnica de Dependências e Concorrência — Conclusão
 
+> **Historical snapshot — 2026-11-03 audit note:** Historical Stage 2 snapshot. Dependency versions, test counts and validation claims describe an earlier state; verify the current manifest and run checks before relying on them.
+
+
 **Data:** 2026-11-02  
 **Status:** ✓ Completa  
 **Responsável:** Validação de APIs e Rust bindings

@@ -1,5 +1,8 @@
 # Próxima fase — gpdfview
 
+> **Historical snapshot — 2026-11-03 audit note:** Historical milestone snapshot. The dependency versions, test counts and status statements in this file describe the state at the time it was written, not the 2026-11-03 audited tree. Use `docs/PROJECT_AUDIT.md` for current findings.
+
+
 ## Status atual
 
 O projeto já está em um estado funcional e estável para a fase de fechamento técnico:

@@ -1,5 +1,8 @@
 # Planning Alignment Report
 
+> **Historical snapshot — 2026-11-03 audit note:** Historical planning note from 2026-11-02. It is retained as a record of decisions, but implementation status must be checked against the 2026-11-03 audit documents.
+
+
 Date: 2026-11-02
 Source reviewed: Plano_de_Desenvolvimento_gpdfview.pdf (versao 1.0)
 

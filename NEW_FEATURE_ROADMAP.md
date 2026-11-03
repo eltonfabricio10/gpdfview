@@ -1,5 +1,8 @@
 # New Feature Roadmap (Post-Alignment)
 
+> **Historical snapshot — 2026-11-03 audit note:** This roadmap is a historical planning snapshot. Some items listed as future work have since been implemented, while some source-level implementations still need runtime validation. For current truth, use `docs/FEATURE_PARITY.md` and `docs/IMPLEMENTATION_PLAN.md`.
+
+
 Date: 2026-11-02
 
 This roadmap prioritizes highest-value parity gaps while preserving the current stable architecture.

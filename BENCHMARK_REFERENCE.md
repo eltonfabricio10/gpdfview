@@ -1,5 +1,8 @@
 # Benchmark Reference — Primeiro Marco do gpdfview
 
+> **Audit warning — 2026-11-03:** This document describes the intended benchmark protocol. The current `scripts/benchmark.sh` does not yet measure first-page presentation or reliably sample the gpdfview process RSS; existing `gpdfview_benchmark.tsv` values must not be treated as comparable performance results. See `docs/PROJECT_AUDIT.md` and Block 10 in `docs/IMPLEMENTATION_PLAN.md`.
+
+
 **Data de captura:** 2026-11-02  
 **Executado por:** Marco de execução do primeiro protótipo  
 **Branch:** main

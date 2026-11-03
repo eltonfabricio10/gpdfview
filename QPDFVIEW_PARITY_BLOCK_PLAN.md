@@ -1,5 +1,8 @@
 # Plano Bloco a Bloco para Paridade com qpdfview
 
+> **Historical snapshot — 2026-11-03 audit note:** Historical working plan. Its feature descriptions and architectural observations are not authoritative where they conflict with the audited source. Use `docs/FEATURE_PARITY.md`, `docs/ARCHITECTURE.md` and `docs/IMPLEMENTATION_PLAN.md`.
+
+
 Data: 2026-11-02
 Base de analise: leitura de `sources/mainwindow.*` e `sources/documentview.*` do qpdfview + estado atual do gpdfview.
 

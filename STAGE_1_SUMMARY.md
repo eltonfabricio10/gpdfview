@@ -1,5 +1,8 @@
 # Etapa 1: Fixar Referência e Critérios de Medição — Conclusão
 
+> **Historical snapshot — 2026-11-03 audit note:** Historical Stage 1 snapshot. It describes an earlier application state and must not be used as a current feature inventory.
+
+
 **Data:** 2026-11-02  
 **Status:** ✓ Completa  
 **Responsável:** Protótipo do primeiro marco
