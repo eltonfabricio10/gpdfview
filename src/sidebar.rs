@@ -16,6 +16,8 @@ use crate::viewer_state::RenderKey;
 
 const THUMBNAIL_MAX_EDGE: i32 = 132;
 const THUMBNAIL_CACHE_BYTES: usize = 24 * 1024 * 1024;
+const THUMBNAIL_FRAME_WIDTH: i32 = 96;
+const THUMBNAIL_FRAME_HEIGHT: i32 = 136;
 
 #[derive(Clone)]
 struct SidebarOpenContext {
@@ -31,25 +33,13 @@ fn page_range_for_sidebar(page_count: i32, current_page: i32) -> Vec<i32> {
         return Vec::new();
     }
 
-    if page_count <= 5 {
+    if page_count <= 9 {
         return (0..page_count).collect();
     }
 
-    let start = (current_page - 2).max(0);
-    let end = (current_page + 2).min(page_count - 1);
-    let mut pages = Vec::new();
-    for page_index in start..=end {
-        pages.push(page_index);
-    }
-
-    if pages.len() < 5 {
-        pages.clear();
-        for page_index in 0..5 {
-            pages.push(page_index);
-        }
-    }
-
-    pages
+    let start = (current_page - 4).max(0);
+    let end = (current_page + 4).min(page_count - 1);
+    (start..=end).collect()
 }
 
 fn append_sidebar_entry(
@@ -140,14 +130,44 @@ fn build_page_thumbnail_button(
 
     if let Some(surface) = thumbnail_surface_for_page(controller, thumbnail_cache, page_index) {
         let preview = gtk4::DrawingArea::new();
-        preview.set_content_width(surface.width());
-        preview.set_content_height(surface.height());
-        preview.set_size_request(surface.width(), surface.height());
+        preview.set_content_width(THUMBNAIL_FRAME_WIDTH);
+        preview.set_content_height(THUMBNAIL_FRAME_HEIGHT);
+        preview.set_size_request(THUMBNAIL_FRAME_WIDTH, THUMBNAIL_FRAME_HEIGHT);
         let thumbnail = surface.clone();
         preview.set_draw_func(move |_, context, _, _| {
+            let frame_width = f64::from(THUMBNAIL_FRAME_WIDTH);
+            let frame_height = f64::from(THUMBNAIL_FRAME_HEIGHT);
+            context.set_source_rgb(0.95, 0.95, 0.96);
+            context.rectangle(0.0, 0.0, frame_width, frame_height);
+            let _ = context.fill();
+
+            let page_margin = 6.0;
+            let page_width = frame_width - (page_margin * 2.0);
+            let page_height = frame_height - (page_margin * 2.0);
+            context.set_source_rgb(1.0, 1.0, 1.0);
+            context.rectangle(page_margin, page_margin, page_width, page_height);
+            let _ = context.fill_preserve();
+            context.set_source_rgba(0.0, 0.0, 0.0, 0.2);
+            context.set_line_width(1.0);
+            let _ = context.stroke();
+
+            let surface_width = f64::from(thumbnail.width());
+            let surface_height = f64::from(thumbnail.height());
+            let scale = (page_width / surface_width)
+                .min(page_height / surface_height)
+                .min(1.0);
+            let draw_width = surface_width * scale;
+            let draw_height = surface_height * scale;
+            let draw_x = page_margin + ((page_width - draw_width) / 2.0);
+            let draw_y = page_margin + ((page_height - draw_height) / 2.0);
+
+            context.save().ok();
+            context.translate(draw_x, draw_y);
+            context.scale(scale, scale);
             if context.set_source_surface(&thumbnail, 0.0, 0.0).is_ok() {
                 let _ = context.paint();
             }
+            context.restore().ok();
         });
         content.append(&preview);
     }
@@ -198,7 +218,7 @@ fn populate_pages_flow(
             page_index,
             page_index == state.page_index,
         );
-        page_button.set_size_request(150, -1);
+        page_button.set_size_request(THUMBNAIL_FRAME_WIDTH + 28, -1);
         pages_flow.insert(&page_button, -1);
     }
 }
@@ -662,8 +682,8 @@ mod tests {
     use super::page_range_for_sidebar;
 
     #[test]
-    fn page_range_for_sidebar_stays_centered_around_the_current_page() {
-        assert_eq!(page_range_for_sidebar(12, 5), vec![3, 4, 5, 6, 7]);
+    fn page_range_for_sidebar_tracks_a_centered_window() {
+        assert_eq!(page_range_for_sidebar(12, 5), vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
         assert_eq!(page_range_for_sidebar(5, 0), vec![0, 1, 2, 3, 4]);
         assert_eq!(page_range_for_sidebar(3, 2), vec![0, 1, 2]);
     }

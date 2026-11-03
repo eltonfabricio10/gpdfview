@@ -17,8 +17,10 @@ use crate::keyboard::KeyAction;
 use crate::layout::cairo_search_highlight_rects;
 use crate::printing::PrintService;
 use crate::session::{
-    last_directory_for_home_path, last_window_geometry_for_home_path, load_recent_documents,
-    newest_valid_recent_document, remember_window_geometry,
+    last_directory_for_home_path, last_window_geometry_for_home_path,
+    last_window_state_for_home_path, load_recent_documents, newest_valid_recent_document,
+    remember_resume_last_document, remember_window_geometry, remember_window_state,
+    should_resume_last_document,
 };
 use crate::sidebar::build_sidebar;
 use crate::ui_commands::{dispatch_ui_command, UiCommand};
@@ -94,6 +96,14 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     } else {
         remember_window_geometry(1080, 760);
     }
+    if let Some((was_maximized, was_fullscreen)) = last_window_state_for_home_path() {
+        if was_maximized {
+            window.maximize();
+        }
+        if was_fullscreen {
+            window.fullscreen();
+        }
+    }
 
     let shell = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
@@ -155,16 +165,16 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         print_button: print_button.clone(),
     });
 
-    if let Some(path) = newest_valid_recent_document(&load_recent_documents()) {
-        let title_text = path
-            .file_name()
-            .and_then(|name| name.to_str())
-            .unwrap_or("Documento")
-            .to_string();
-        tab_manager.borrow().add_tab_with_path(&initial.root, &title_text, Some(path.clone()));
-        initial.open_document(path);
-    } else {
-        tab_manager.borrow().add_tab_with_path(&initial.root, "Documento", None);
+    if should_resume_last_document() {
+        if let Some(path) = newest_valid_recent_document(&load_recent_documents()) {
+            let title_text = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("Documento")
+                .to_string();
+            tab_manager.borrow().add_tab_with_path(&initial.root, &title_text, Some(path.clone()));
+            initial.open_document(path);
+        }
     }
 
     let sidebar = build_sidebar(
@@ -376,6 +386,22 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
             );
         }
     });
+    let close_tab_manager = tab_manager.clone();
+    window.connect_close_request(move |win| {
+        let has_open_documents = close_tab_manager.borrow().has_open_documents();
+        remember_resume_last_document(has_open_documents);
+        let is_maximized = win.is_maximized();
+        let is_fullscreen = win.is_fullscreen();
+        remember_window_state(is_maximized, is_fullscreen);
+        if !is_maximized && !is_fullscreen {
+            let width = win.width();
+            let height = win.height();
+            if width > 0 && height > 0 {
+                remember_window_geometry(width, height);
+            }
+        }
+        gtk::glib::Propagation::Proceed
+    });
     window.set_content(Some(&shell));
     window.present();
     Some(initial)
@@ -490,12 +516,115 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
 
     let draw_controller = controller.clone();
     drawing_area.set_draw_func(move |_, context, width, height| {
-        context.set_source_rgb(0.18, 0.19, 0.21);
+        context.set_source_rgb(0.86, 0.87, 0.90);
         let _ = context.paint();
 
         let state = draw_controller.state.borrow();
         let split_mode = state.split_mode;
         let layout_mode = state.layout_mode;
+
+        if split_mode == SplitViewMode::Off && layout_mode == LayoutMode::Continuous {
+            let Some(path) = state.path.clone() else {
+                drop(state);
+                context.set_source_rgb(0.82, 0.83, 0.85);
+                context.select_font_face("Sans", gtk4::cairo::FontSlant::Normal, gtk4::cairo::FontWeight::Normal);
+                context.set_font_size(16.0);
+                context.move_to(24.0, 40.0);
+                let _ = context.show_text("Open a PDF to start reading");
+                return;
+            };
+            let page_count = state.page_count.max(0);
+            let scale = state.scale;
+            let rotation = state.rotation;
+            let current_page = state.page_index;
+            let highlights = state.search_highlights.clone();
+            let page_height_points = state.page_height_points.max(1.0);
+            let fallback_surface = draw_surface.borrow().as_ref().cloned();
+            let estimated_width = if state.page_width_points > 0.0 {
+                (state.page_width_points * scale).max(1.0)
+            } else {
+                fallback_surface
+                    .as_ref()
+                    .map(|surface| f64::from(surface.width()))
+                    .unwrap_or(612.0)
+            };
+            let estimated_height = if state.page_height_points > 0.0 {
+                (state.page_height_points * scale).max(1.0)
+            } else {
+                fallback_surface
+                    .as_ref()
+                    .map(|surface| f64::from(surface.height()))
+                    .unwrap_or(792.0)
+            };
+            let adjustment = draw_controller.scrolled.vadjustment();
+            let view_top = adjustment.value();
+            let view_bottom = view_top + adjustment.page_size();
+            drop(state);
+
+            if page_count > 0 {
+                let page_gap = 30.0;
+                let top_margin = 24.0;
+                let side_margin = 36.0;
+                let page_width = estimated_width;
+                let page_height = estimated_height;
+                let page_stride = page_height + page_gap;
+                let x = ((f64::from(width) - page_width) / 2.0).max(side_margin);
+
+                let first_page = ((view_top - top_margin) / page_stride).floor() as i32 - 2;
+                let last_page = ((view_bottom - top_margin) / page_stride).ceil() as i32 + 2;
+                let start_page = first_page.clamp(0, page_count - 1);
+                let end_page = last_page.clamp(0, page_count - 1);
+
+                for page_index in start_page..=end_page {
+                    let y = top_margin + f64::from(page_index) * (page_height + page_gap);
+                    context.set_source_rgba(0.0, 0.0, 0.0, 0.12);
+                    context.rectangle(x + 4.0, y + 6.0, page_width, page_height);
+                    let _ = context.fill();
+
+                    context.set_source_rgb(1.0, 1.0, 1.0);
+                    context.rectangle(x, y, page_width, page_height);
+                    let _ = context.fill_preserve();
+                    context.set_source_rgba(0.0, 0.0, 0.0, 0.20);
+                    context.set_line_width(1.0);
+                    let _ = context.stroke();
+
+                    let key = crate::viewer_state::RenderKey::new(path.clone(), page_index, scale, rotation);
+                    let page_surface = draw_controller
+                        .cache
+                        .borrow_mut()
+                        .get(&key)
+                        .cloned()
+                        .or_else(|| {
+                            if page_index == current_page {
+                                fallback_surface.clone()
+                            } else {
+                                None
+                            }
+                        });
+                    if let Some(surface) = page_surface {
+                        let surface_width = f64::from(surface.width());
+                        let surface_height = f64::from(surface.height());
+                        let draw_x = x + ((page_width - surface_width) / 2.0).max(0.0);
+                        let draw_y = y + ((page_height - surface_height) / 2.0).max(0.0);
+                        if context.set_source_surface(&surface, draw_x, draw_y).is_ok() {
+                            let _ = context.paint();
+                        }
+                    }
+
+                    if !highlights.is_empty() && page_index == current_page {
+                        context.set_source_rgba(1.0, 0.9, 0.1, 0.45);
+                        let highlight_rects = cairo_search_highlight_rects(page_height_points, scale, &highlights);
+                        for (left, top, right, bottom) in highlight_rects {
+                            context.rectangle(x + left, y + top, right - left, bottom - top);
+                            let _ = context.fill();
+                        }
+                    }
+                }
+            }
+
+            return;
+        }
+
         let mut page_surfaces = Vec::new();
         if let Some(path) = state.path.clone() {
             let pages: Vec<i32> = if split_mode != SplitViewMode::Off {
@@ -593,6 +722,12 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
                         _ => (f64::from(height) - height_for_surface) / 2.0,
                     }
                 };
+                context.set_source_rgb(1.0, 1.0, 1.0);
+                context.rectangle(x, y, width_for_surface, height_for_surface);
+                let _ = context.fill_preserve();
+                context.set_source_rgba(0.0, 0.0, 0.0, 0.20);
+                context.set_line_width(1.0);
+                let _ = context.stroke();
                 if context.set_source_surface(&surface, x, y).is_ok() {
                     let _ = context.paint();
                 }
@@ -612,11 +747,16 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
                 }
             }
         } else {
+            let has_document = draw_controller.state.borrow().path.is_some();
             context.set_source_rgb(0.82, 0.83, 0.85);
             context.select_font_face("Sans", gtk4::cairo::FontSlant::Normal, gtk4::cairo::FontWeight::Normal);
             context.set_font_size(16.0);
             context.move_to(24.0, 40.0);
-            let _ = context.show_text("Open a PDF to start reading");
+            if has_document {
+                let _ = context.show_text("Loading document...");
+            } else {
+                let _ = context.show_text("Open a PDF to start reading");
+            }
         }
     });
 
@@ -626,16 +766,45 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
 
     let scroll_controller = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
     let scroll_zoom = controller.clone();
-    scroll_controller.connect_scroll(move |_, delta_x, delta_y| {
+    scroll_controller.connect_scroll(move |scroll, delta_x, delta_y| {
         let _ = delta_x;
-        let step = crate::navigation::scroll_zoom_step(delta_y, gtk::gdk::ModifierType::CONTROL_MASK);
-        if step == 0.0 {
-            return gtk::glib::Propagation::Proceed;
+        let modifiers = scroll.current_event_state();
+        let step = crate::navigation::scroll_zoom_step(delta_y, modifiers);
+        if step != 0.0 {
+            scroll_zoom.change_zoom(step);
+            return gtk::glib::Propagation::Stop;
         }
-        scroll_zoom.change_zoom(step);
-        gtk::glib::Propagation::Stop
+
+        gtk::glib::Propagation::Proceed
     });
     controller.area.add_controller(scroll_controller);
+
+    let continuous_sync_controller = controller.clone();
+    controller
+        .scrolled
+        .vadjustment()
+        .connect_value_changed(move |adjustment| {
+            let (layout_mode, page_count, page_height_points, scale, current_page) = {
+                let state = continuous_sync_controller.state.borrow();
+                (
+                    state.layout_mode,
+                    state.page_count,
+                    state.page_height_points,
+                    state.scale,
+                    state.page_index,
+                )
+            };
+            if layout_mode != LayoutMode::Continuous || page_count <= 0 || page_height_points <= 0.0 {
+                return;
+            }
+
+            let page_stride = (page_height_points * scale).max(1.0) + 30.0;
+            let offset = (adjustment.value() - 24.0).max(0.0);
+            let target_page = ((offset / page_stride).floor() as i32).clamp(0, page_count - 1);
+            if target_page != current_page {
+                continuous_sync_controller.navigate_to(target_page);
+            }
+        });
 
     let keyboard_controller = controller.clone();
     let last_directory = last_directory_for_home_path();
@@ -691,9 +860,15 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
         }
     });
     let zoom_out_controller = controller.clone();
-    zoom_out.connect_clicked(move |_| zoom_out_controller.change_zoom(-0.1));
+    zoom_out.connect_clicked(move |_| {
+        let step = crate::session::load_app_settings().zoom_step.clamp(0.05, 1.0);
+        zoom_out_controller.change_zoom(-step);
+    });
     let zoom_in_controller = controller.clone();
-    zoom_in.connect_clicked(move |_| zoom_in_controller.change_zoom(0.1));
+    zoom_in.connect_clicked(move |_| {
+        let step = crate::session::load_app_settings().zoom_step.clamp(0.05, 1.0);
+        zoom_in_controller.change_zoom(step);
+    });
     let search_controller = controller.clone();
     search_button.connect_clicked(move |_| search_controller.search_current_page());
     let previous_match_controller = controller.clone();

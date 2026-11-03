@@ -138,6 +138,13 @@ impl DocumentTabManager {
         self.paths.borrow_mut().push(path);
     }
 
+    pub fn has_open_documents(&self) -> bool {
+        self.paths
+            .borrow()
+            .iter()
+            .any(|path| path.as_ref().is_some())
+    }
+
     #[cfg(test)]
     pub fn tab_count(&self) -> usize {
         self.titles.borrow().len()
@@ -188,5 +195,18 @@ mod tests {
         assert_eq!(manager.close_last_recorded_tab(), Some("Beta".to_string()));
         assert_eq!(manager.recent_closed_count(), 1);
         assert_eq!(manager.restore_last_closed_tab(), Some("Beta".to_string()));
+    }
+
+    #[test]
+    fn tracks_whether_any_document_is_open() {
+        let manager = DocumentTabManager::new_model();
+        manager.paths.borrow_mut().push(None);
+        assert!(!manager.has_open_documents());
+
+        manager
+            .paths
+            .borrow_mut()
+            .push(Some(PathBuf::from("/tmp/doc.pdf")));
+        assert!(manager.has_open_documents());
     }
 }

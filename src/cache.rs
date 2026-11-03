@@ -82,10 +82,6 @@ impl<K: Eq + Hash + Clone, V> LruCache<K, V> {
             .collect()
     }
 
-    pub fn clear(&mut self) {
-        self.entries.clear();
-        self.bytes_used = 0;
-    }
 }
 
 #[cfg(test)]

@@ -133,10 +133,53 @@ pub fn session_storage_dir() -> PathBuf {
     session_storage_dir_for(Path::new(&home))
 }
 
+fn resume_last_document_file_for_home(home: &Path) -> PathBuf {
+    session_storage_dir_for(home).join("resume_last_document.txt")
+}
+
+pub fn remember_resume_last_document_for_home(home: &Path, should_resume: bool) {
+    let value = if should_resume { "1" } else { "0" };
+    let _ = fs::write(resume_last_document_file_for_home(home), value);
+}
+
+pub fn remember_resume_last_document(should_resume: bool) {
+    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    remember_resume_last_document_for_home(Path::new(&home), should_resume);
+}
+
+pub fn should_resume_last_document_for_home(home: &Path) -> bool {
+    let file = resume_last_document_file_for_home(home);
+    let Ok(content) = fs::read_to_string(file) else {
+        return true;
+    };
+    content.trim() == "1"
+}
+
+pub fn should_resume_last_document() -> bool {
+    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    should_resume_last_document_for_home(Path::new(&home))
+}
+
 pub fn remember_window_geometry_for_home(home: &Path, width: i32, height: i32) {
     let storage = session_storage_dir_for(home);
     let file = storage.join("window_size.txt");
     let _ = fs::write(file, format!("{width} {height}"));
+}
+
+fn window_state_file_for_home(home: &Path) -> PathBuf {
+    session_storage_dir_for(home).join("window_state.txt")
+}
+
+pub fn remember_window_state_for_home(home: &Path, is_maximized: bool, is_fullscreen: bool) {
+    let file = window_state_file_for_home(home);
+    let maximized = if is_maximized { "1" } else { "0" };
+    let fullscreen = if is_fullscreen { "1" } else { "0" };
+    let _ = fs::write(file, format!("maximized={maximized}\nfullscreen={fullscreen}\n"));
+}
+
+pub fn remember_window_state(is_maximized: bool, is_fullscreen: bool) {
+    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    remember_window_state_for_home(Path::new(&home), is_maximized, is_fullscreen);
 }
 
 pub fn remember_window_geometry(width: i32, height: i32) {
@@ -151,6 +194,24 @@ pub fn last_window_geometry_for_home(home: &Path) -> Option<(i32, i32)> {
     let width = parts.next()?.parse::<i32>().ok()?;
     let height = parts.next()?.parse::<i32>().ok()?;
     Some((width, height))
+}
+
+pub fn last_window_state_for_home(home: &Path) -> Option<(bool, bool)> {
+    let file = window_state_file_for_home(home);
+    let content = fs::read_to_string(file).ok()?;
+    let mut is_maximized = None;
+    let mut is_fullscreen = None;
+    for line in content.lines() {
+        let mut parts = line.splitn(2, '=');
+        let key = parts.next()?.trim();
+        let value = parts.next()?.trim();
+        match key {
+            "maximized" => is_maximized = Some(value == "1" || value.eq_ignore_ascii_case("true")),
+            "fullscreen" => is_fullscreen = Some(value == "1" || value.eq_ignore_ascii_case("true")),
+            _ => {}
+        }
+    }
+    Some((is_maximized.unwrap_or(false), is_fullscreen.unwrap_or(false)))
 }
 
 pub fn remember_last_directory_for_home(home: &Path, dir: &Path) {
@@ -188,6 +249,11 @@ pub fn last_directory_for_home_path() -> Option<PathBuf> {
 pub fn last_window_geometry_for_home_path() -> Option<(i32, i32)> {
     let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
     last_window_geometry_for_home(Path::new(&home))
+}
+
+pub fn last_window_state_for_home_path() -> Option<(bool, bool)> {
+    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    last_window_state_for_home(Path::new(&home))
 }
 
 pub fn write_session_entries(path: &Path, entries: &[PathBuf]) {
@@ -585,6 +651,50 @@ mod tests {
         assert_eq!(restored.default_layout, "continuous");
         assert!(restored.split_sync);
         assert_eq!(restored.shortcuts.get("open_file").map(String::as_str), Some("Ctrl+O"));
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn session_resume_flag_roundtrip() {
+        let base = std::env::temp_dir().join(format!(
+            "gpdfview-resume-flag-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch available")
+                .as_nanos()
+        ));
+        let home = base.join("home");
+
+        assert!(should_resume_last_document_for_home(&home));
+
+        remember_resume_last_document_for_home(&home, false);
+        assert!(!should_resume_last_document_for_home(&home));
+
+        remember_resume_last_document_for_home(&home, true);
+        assert!(should_resume_last_document_for_home(&home));
+
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn window_state_roundtrip() {
+        let base = std::env::temp_dir().join(format!(
+            "gpdfview-window-state-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch available")
+                .as_nanos()
+        ));
+        let home = base.join("home");
+
+        remember_window_state_for_home(&home, true, false);
+        assert_eq!(last_window_state_for_home(&home), Some((true, false)));
+
+        remember_window_state_for_home(&home, false, true);
+        assert_eq!(last_window_state_for_home(&home), Some((false, true)));
 
         let _ = fs::remove_dir_all(&base);
     }

@@ -8,6 +8,7 @@ use crate::app::ViewerController;
 use crate::engine::{RenderResult, RenderedPage};
 use crate::viewer_state::apply_render_request;
 use crate::session::remember_document_view;
+use crate::viewer_state::LayoutMode;
 
 pub(crate) fn request_render(
     controller: &ViewerController,
@@ -63,8 +64,6 @@ pub(crate) fn request_render(
         state.generation = generation;
         state.request_started = Some(Instant::now());
     }
-    *controller.surface.borrow_mut() = None;
-    controller.area.queue_draw();
     controller.status.set_text("Rendering page…");
     let count = controller.state.borrow().page_count;
     if count > 0 {
@@ -134,8 +133,22 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
             None
         }
     };
-    controller.area.set_content_width(page.width.saturating_add(32));
-    controller.area.set_content_height(page.height.saturating_add(32));
+    {
+        let state = controller.state.borrow();
+        if state.layout_mode == LayoutMode::Continuous {
+            let width = page.width.saturating_add(96);
+            let height = page
+                .height
+                .saturating_mul(page.page_count.max(1))
+                .saturating_add(page.page_count.saturating_mul(30))
+                .saturating_add(48);
+            controller.area.set_content_width(width);
+            controller.area.set_content_height(height);
+        } else {
+            controller.area.set_content_width(page.width.saturating_add(32));
+            controller.area.set_content_height(page.height.saturating_add(32));
+        }
+    }
     controller.area.queue_draw();
     controller
         .page_spin

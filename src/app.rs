@@ -114,8 +114,6 @@ impl ViewerController {
     }
 
     pub(crate) fn open_document(&self, path: PathBuf) {
-        self.cache.borrow_mut().clear();
-        *self.surface.borrow_mut() = None;
         self.page_spin.set_sensitive(false);
         self.set_page_spin_value(1.0);
         self.page_total.set_text("/ …");
@@ -128,6 +126,7 @@ impl ViewerController {
         self.title.set_text(filename);
 
         {
+            let settings = load_app_settings();
             let mut state = self.state.borrow_mut();
             state.path = Some(path.clone());
             state.page_index = 0;
@@ -136,6 +135,8 @@ impl ViewerController {
             state.page_height_points = 0.0;
             state.scale = DEFAULT_ZOOM;
             state.rotation = 0;
+            state.layout_mode = crate::viewer_state::LayoutMode::from_str(&settings.default_layout);
+            state.split_sync = settings.split_sync;
             state.search_query.clear();
             state.search_results.clear();
             state.search_global_index = 0;

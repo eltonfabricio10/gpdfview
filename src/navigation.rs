@@ -6,20 +6,26 @@ use crate::keyboard::KeyAction;
 use crate::layout::{compute_fit_page_scale, compute_fit_width_scale};
 use crate::viewer_state::{apply_render_request, sanitize_scale};
 
+fn zoom_step_from_settings() -> f64 {
+    crate::session::load_app_settings().zoom_step.clamp(0.05, 1.0)
+}
+
 pub(crate) fn scroll_zoom_step(delta_y: f64, state: ModifierType) -> f64 {
     if !state.contains(ModifierType::CONTROL_MASK) {
         return 0.0;
     }
+    let zoom_step = zoom_step_from_settings();
     if delta_y < 0.0 {
-        0.1
+        zoom_step
     } else if delta_y > 0.0 {
-        -0.1
+        -zoom_step
     } else {
         0.0
     }
 }
 
 pub(crate) fn handle_key_action(controller: &ViewerController, action: KeyAction) {
+    let zoom_step = zoom_step_from_settings();
     match action {
         KeyAction::NextPage => {
             let page = controller.state.borrow().page_index + 1;
@@ -36,8 +42,8 @@ pub(crate) fn handle_key_action(controller: &ViewerController, action: KeyAction
                 navigate_to(controller, page_count - 1);
             }
         }
-        KeyAction::ZoomIn => change_zoom(controller, 0.1),
-        KeyAction::ZoomOut => change_zoom(controller, -0.1),
+        KeyAction::ZoomIn => change_zoom(controller, zoom_step),
+        KeyAction::ZoomOut => change_zoom(controller, -zoom_step),
         KeyAction::FitWidth => fit_width(controller),
         KeyAction::FitPage => fit_page(controller),
         KeyAction::RotateLeft => rotate_page(controller, -90),
