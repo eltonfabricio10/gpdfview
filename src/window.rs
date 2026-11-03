@@ -154,9 +154,19 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         title: title.clone(),
         print_button: print_button.clone(),
     });
+
     if let Some(path) = newest_valid_recent_document(&load_recent_documents()) {
+        let title_text = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("Documento")
+            .to_string();
+        tab_manager.borrow().add_tab_with_path(&initial.root, &title_text, Some(path.clone()));
         initial.open_document(path);
+    } else {
+        tab_manager.borrow().add_tab_with_path(&initial.root, "Documento", None);
     }
+
     let sidebar = build_sidebar(
         app,
         &window,
