@@ -1,3 +1,8 @@
+pub const CONTINUOUS_TOP_MARGIN: f64 = 24.0;
+pub const CONTINUOUS_BOTTOM_MARGIN: f64 = 24.0;
+pub const CONTINUOUS_SIDE_MARGIN: f64 = 36.0;
+pub const CONTINUOUS_PAGE_GAP: f64 = 30.0;
+
 pub(crate) fn cairo_search_highlight_rects(
     page_height_points: f64,
     scale: f64,
@@ -33,4 +38,22 @@ pub(crate) fn compute_fit_page_scale(
     let width_scale = available_width / page_width_points;
     let height_scale = available_height / page_height_points;
     width_scale.min(height_scale).clamp(0.1, 4.0)
+}
+
+pub(crate) fn continuous_page_stride(page_height_points: f64, scale: f64) -> f64 {
+    (page_height_points.max(1.0) * scale.max(0.1)) + CONTINUOUS_PAGE_GAP
+}
+
+pub(crate) fn continuous_page_top(page_index: i32, page_height_points: f64, scale: f64) -> f64 {
+    CONTINUOUS_TOP_MARGIN + f64::from(page_index.max(0)) * continuous_page_stride(page_height_points, scale)
+}
+
+pub(crate) fn continuous_content_height(page_height_px: i32, page_count: i32) -> i32 {
+    let page_count = page_count.max(1);
+    let page_height = f64::from(page_height_px.max(1));
+    let total = CONTINUOUS_TOP_MARGIN
+        + f64::from(page_count) * page_height
+        + f64::from(page_count.saturating_sub(1)) * CONTINUOUS_PAGE_GAP
+        + CONTINUOUS_BOTTOM_MARGIN;
+    total.ceil() as i32
 }

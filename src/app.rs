@@ -8,7 +8,7 @@ use crate::navigation::{
 };
 use crate::printing::{PrintOptions, PrintOrientation, PrintService};
 use crate::rendering::{poll, present_page, request_render, schedule_prefetch, search_current_page};
-use crate::session::{load_app_settings, load_document_view};
+use crate::session::{load_app_settings, load_document_view, remember_recent_document};
 #[cfg(test)]
 use crate::session::{
     last_directory_for_home, last_window_geometry_for_home, newest_valid_recent_document,
@@ -114,6 +114,7 @@ impl ViewerController {
     }
 
     pub(crate) fn open_document(&self, path: PathBuf) {
+        remember_recent_document(&path);
         self.page_spin.set_sensitive(false);
         self.set_page_spin_value(1.0);
         self.page_total.set_text("/ …");

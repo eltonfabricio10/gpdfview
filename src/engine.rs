@@ -11,6 +11,7 @@ use std::sync::{Arc, Condvar, Mutex, mpsc};
 use std::thread;
 
 const RENDER_SCALE_LIMIT: f64 = 4.0;
+const PAGE_MEMORY_LIMIT_BYTES: usize = 128 * 1024 * 1024;
 
 #[derive(Clone, Debug)]
 pub struct RenderRequest {
@@ -556,8 +557,9 @@ fn render_to_pixels(
     rotated_width: f64,
     rotated_height: f64,
 ) -> Result<RenderedPage, String> {
-    let width = (rotated_width * request.scale).ceil() as i32;
-    let height = (rotated_height * request.scale).ceil() as i32;
+    let scale = choose_render_scale(rotated_width, rotated_height, request.scale)?;
+    let width = (rotated_width * scale).ceil() as i32;
+    let height = (rotated_height * scale).ceil() as i32;
     if width <= 0 || height <= 0 {
         return Err("PDF page has invalid dimensions".into());
     }
@@ -565,8 +567,11 @@ fn render_to_pixels(
         .checked_mul(height as usize)
         .and_then(|pixels| pixels.checked_mul(4))
         .ok_or_else(|| "PDF page dimensions exceed supported limits".to_string())?;
-    if pixel_bytes > 128 * 1024 * 1024 {
-        return Err("PDF page is too large to render within the 128 MiB page limit".into());
+    if pixel_bytes > PAGE_MEMORY_LIMIT_BYTES {
+        return Err(format!(
+            "PDF page is too large to render safely ({} MiB limit)",
+            PAGE_MEMORY_LIMIT_BYTES / (1024 * 1024)
+        ));
     }
     let mut surface =
         ImageSurface::create(Format::ARgb32, width, height).map_err(|error| error.to_string())?;
@@ -574,8 +579,8 @@ fn render_to_pixels(
     let angle = request.rotation as f64 * std::f64::consts::PI / 180.0;
     context.translate(width as f64 / 2.0, height as f64 / 2.0);
     context.rotate(angle);
-    context.translate(-page_width_points * request.scale / 2.0, -page_height_points * request.scale / 2.0);
-    context.scale(request.scale, request.scale);
+    context.translate(-page_width_points * scale / 2.0, -page_height_points * scale / 2.0);
+    context.scale(scale, scale);
     page.render(&context);
     surface.flush();
     drop(context);
@@ -586,7 +591,7 @@ fn render_to_pixels(
     Ok(RenderedPage {
         generation: request.generation,
         path: request.path.clone(),
-        scale: request.scale,
+        scale,
         rotation: request.rotation,
         prefetch: request.prefetch,
         page_index: request.page_index,
@@ -598,6 +603,36 @@ fn render_to_pixels(
         stride,
         pixels,
     })
+}
+
+fn choose_render_scale(
+    rotated_width_points: f64,
+    rotated_height_points: f64,
+    requested_scale: f64,
+) -> Result<f64, String> {
+    if !rotated_width_points.is_finite()
+        || !rotated_height_points.is_finite()
+        || rotated_width_points <= 0.0
+        || rotated_height_points <= 0.0
+    {
+        return Err("PDF page has invalid dimensions".to_string());
+    }
+
+    let area_points = rotated_width_points * rotated_height_points;
+    let max_pixels = PAGE_MEMORY_LIMIT_BYTES as f64 / 4.0;
+    let max_safe_scale = (max_pixels / area_points).sqrt();
+    if !max_safe_scale.is_finite() || max_safe_scale <= 0.0 {
+        return Err("PDF page dimensions exceed supported limits".to_string());
+    }
+
+    // Keep a small safety margin to avoid ceil/stride edge cases crossing the memory cap.
+    let adaptive_scale = (max_safe_scale * 0.98).max(0.01);
+    let final_scale = requested_scale.min(adaptive_scale);
+    if final_scale <= 0.0 || !final_scale.is_finite() {
+        return Err("PDF page is too large to render safely".to_string());
+    }
+
+    Ok(final_scale)
 }
 
 #[cfg(test)]
@@ -810,7 +845,7 @@ mod tests {
     }
 
     #[test]
-    fn rejects_a_page_that_exceeds_the_render_memory_limit() {
+    fn auto_scales_a_page_that_exceeds_the_render_memory_limit() {
         let fixture = PdfFixture::large_page();
         let renderer = PdfRenderer::new().expect("start worker");
         let generation = renderer.request(fixture.0.clone(), 0, 4.0, 0);
@@ -818,17 +853,21 @@ mod tests {
 
         while Instant::now() < deadline {
             match renderer.try_recv() {
-                Ok(RenderResult::Error(error)) if error.generation == generation => {
-                    assert!(error.message.contains("128 MiB page limit"));
+                Ok(RenderResult::Page(page)) if page.generation == generation => {
+                    assert!(page.scale < 4.0);
+                    assert!(page.width > 0);
+                    assert!(page.height > 0);
+                    let bytes = (page.stride as usize) * (page.height as usize);
+                    assert!(bytes <= super::PAGE_MEMORY_LIMIT_BYTES);
                     return;
                 }
-                Ok(RenderResult::Page(page)) if page.generation == generation => {
-                    panic!("oversized PDF page unexpectedly rendered");
+                Ok(RenderResult::Error(error)) if error.generation == generation => {
+                    panic!("oversized render should have been downscaled: {}", error.message);
                 }
                 _ => thread::sleep(Duration::from_millis(10)),
             }
         }
-        panic!("oversized page request did not return an error");
+        panic!("oversized page request did not return a page");
     }
 
     #[test]

@@ -3,7 +3,10 @@ use gtk4::prelude::*;
 
 use crate::app::ViewerController;
 use crate::keyboard::KeyAction;
-use crate::layout::{compute_fit_page_scale, compute_fit_width_scale};
+use crate::layout::{
+    compute_fit_page_scale, compute_fit_width_scale, continuous_page_top,
+    CONTINUOUS_BOTTOM_MARGIN, CONTINUOUS_SIDE_MARGIN, CONTINUOUS_TOP_MARGIN,
+};
 use crate::viewer_state::{apply_render_request, sanitize_scale};
 
 fn zoom_step_from_settings() -> f64 {
@@ -155,8 +158,8 @@ pub(crate) fn rotate_page(controller: &ViewerController, delta: i32) {
 }
 
 pub(crate) fn fit_width(controller: &ViewerController) {
-    let width = controller.scrolled.width().saturating_sub(32).max(1);
-    let (path, page_index, scale, rotation) = {
+    let base_width = controller.scrolled.width().max(1);
+    let (path, page_index, scale, rotation, layout_mode, page_height_points) = {
         let mut state = controller.state.borrow_mut();
         if state.page_width_points <= 0.0 {
             return;
@@ -164,7 +167,17 @@ pub(crate) fn fit_width(controller: &ViewerController) {
         let path = state.path.clone();
         let current_page = state.page_index;
         let current_rotation = state.rotation;
-        let next_scale = compute_fit_width_scale(state.page_width_points, width);
+        let viewport_width = if state.layout_mode == crate::viewer_state::LayoutMode::Continuous {
+            base_width
+                .saturating_sub((CONTINUOUS_SIDE_MARGIN as i32) * 2)
+                .saturating_sub(8)
+                .max(1)
+        } else {
+            base_width.saturating_sub(32).max(1)
+        };
+        let next_scale = compute_fit_width_scale(state.page_width_points, viewport_width);
+        let layout_mode = state.layout_mode;
+        let page_height_points = state.page_height_points;
         let render_context = apply_render_request(
             &mut state,
             path,
@@ -173,17 +186,28 @@ pub(crate) fn fit_width(controller: &ViewerController) {
             current_rotation,
         );
         match render_context {
-            Some((path, page_index, scale, rotation)) => (path, page_index, scale, rotation),
+            Some((path, page_index, scale, rotation)) => {
+                (path, page_index, scale, rotation, layout_mode, page_height_points)
+            }
             None => return,
         }
     };
     controller.request_render(path, page_index, scale, rotation);
+    if layout_mode == crate::viewer_state::LayoutMode::Continuous && page_height_points > 0.0 {
+        let adjustment = controller.scrolled.vadjustment();
+        let target = continuous_page_top(page_index, page_height_points, scale);
+        let lower = adjustment.lower();
+        let upper = adjustment.upper();
+        let page_size = adjustment.page_size();
+        let max_value = (upper - page_size).max(lower);
+        adjustment.set_value(target.clamp(lower, max_value));
+    }
 }
 
 pub(crate) fn fit_page(controller: &ViewerController) {
-    let viewport_width = controller.scrolled.width().saturating_sub(32).max(1);
-    let viewport_height = controller.scrolled.height().saturating_sub(56).max(1);
-    let (path, page_index, scale, rotation) = {
+    let base_width = controller.scrolled.width().max(1);
+    let base_height = controller.scrolled.height().max(1);
+    let (path, page_index, scale, rotation, layout_mode, page_height_points) = {
         let mut state = controller.state.borrow_mut();
         if state.page_width_points <= 0.0 || state.page_height_points <= 0.0 {
             return;
@@ -191,12 +215,33 @@ pub(crate) fn fit_page(controller: &ViewerController) {
         let path = state.path.clone();
         let current_page = state.page_index;
         let current_rotation = state.rotation;
+        let (viewport_width, viewport_height) = if state.layout_mode
+            == crate::viewer_state::LayoutMode::Continuous
+        {
+            (
+                base_width
+                    .saturating_sub((CONTINUOUS_SIDE_MARGIN as i32) * 2)
+                    .saturating_sub(8)
+                    .max(1),
+                base_height
+                    .saturating_sub((CONTINUOUS_TOP_MARGIN + CONTINUOUS_BOTTOM_MARGIN) as i32)
+                    .saturating_sub(8)
+                    .max(1),
+            )
+        } else {
+            (
+                base_width.saturating_sub(32).max(1),
+                base_height.saturating_sub(56).max(1),
+            )
+        };
         let next_scale = compute_fit_page_scale(
             state.page_width_points,
             state.page_height_points,
             viewport_width,
             viewport_height,
         );
+        let layout_mode = state.layout_mode;
+        let page_height_points = state.page_height_points;
         let render_context = apply_render_request(
             &mut state,
             path,
@@ -205,9 +250,20 @@ pub(crate) fn fit_page(controller: &ViewerController) {
             current_rotation,
         );
         match render_context {
-            Some((path, page_index, scale, rotation)) => (path, page_index, scale, rotation),
+            Some((path, page_index, scale, rotation)) => {
+                (path, page_index, scale, rotation, layout_mode, page_height_points)
+            }
             None => return,
         }
     };
     controller.request_render(path, page_index, scale, rotation);
+    if layout_mode == crate::viewer_state::LayoutMode::Continuous && page_height_points > 0.0 {
+        let adjustment = controller.scrolled.vadjustment();
+        let target = continuous_page_top(page_index, page_height_points, scale);
+        let lower = adjustment.lower();
+        let upper = adjustment.upper();
+        let page_size = adjustment.page_size();
+        let max_value = (upper - page_size).max(lower);
+        adjustment.set_value(target.clamp(lower, max_value));
+    }
 }

@@ -14,7 +14,10 @@ use crate::cache::LruCache;
 use crate::document_actions::{open_document_in_new_tab, show_open_dialog};
 use crate::document_tabs::DocumentTabManager;
 use crate::keyboard::KeyAction;
-use crate::layout::cairo_search_highlight_rects;
+use crate::layout::{
+    cairo_search_highlight_rects, continuous_page_stride, CONTINUOUS_PAGE_GAP,
+    CONTINUOUS_SIDE_MARGIN, CONTINUOUS_TOP_MARGIN,
+};
 use crate::printing::PrintService;
 use crate::session::{
     last_directory_for_home_path, last_window_geometry_for_home_path,
@@ -387,8 +390,10 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         }
     });
     let close_tab_manager = tab_manager.clone();
+    let close_controller = initial.clone();
     window.connect_close_request(move |win| {
-        let has_open_documents = close_tab_manager.borrow().has_open_documents();
+        let has_open_documents = close_tab_manager.borrow().has_open_documents()
+            || close_controller.state.borrow().path.is_some();
         remember_resume_last_document(has_open_documents);
         let is_maximized = win.is_maximized();
         let is_fullscreen = win.is_fullscreen();
@@ -562,9 +567,9 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
             drop(state);
 
             if page_count > 0 {
-                let page_gap = 30.0;
-                let top_margin = 24.0;
-                let side_margin = 36.0;
+                let page_gap = CONTINUOUS_PAGE_GAP;
+                let top_margin = CONTINUOUS_TOP_MARGIN;
+                let side_margin = CONTINUOUS_SIDE_MARGIN;
                 let page_width = estimated_width;
                 let page_height = estimated_height;
                 let page_stride = page_height + page_gap;
@@ -798,9 +803,15 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
                 return;
             }
 
-            let page_stride = (page_height_points * scale).max(1.0) + 30.0;
-            let offset = (adjustment.value() - 24.0).max(0.0);
-            let target_page = ((offset / page_stride).floor() as i32).clamp(0, page_count - 1);
+            let fallback_height_points = continuous_sync_controller
+                .surface
+                .borrow()
+                .as_ref()
+                .map(|surface| f64::from(surface.height()) / scale.max(0.1))
+                .unwrap_or(page_height_points);
+            let stride = continuous_page_stride(fallback_height_points, scale);
+            let offset = (adjustment.value() - CONTINUOUS_TOP_MARGIN).max(0.0);
+            let target_page = ((offset / stride).floor() as i32).clamp(0, page_count - 1);
             if target_page != current_page {
                 continuous_sync_controller.navigate_to(target_page);
             }

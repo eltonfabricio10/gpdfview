@@ -6,6 +6,7 @@ use gtk4::prelude::*;
 
 use crate::app::ViewerController;
 use crate::engine::{RenderResult, RenderedPage};
+use crate::layout::continuous_content_height;
 use crate::viewer_state::apply_render_request;
 use crate::session::remember_document_view;
 use crate::viewer_state::LayoutMode;
@@ -137,11 +138,7 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
         let state = controller.state.borrow();
         if state.layout_mode == LayoutMode::Continuous {
             let width = page.width.saturating_add(96);
-            let height = page
-                .height
-                .saturating_mul(page.page_count.max(1))
-                .saturating_add(page.page_count.saturating_mul(30))
-                .saturating_add(48);
+            let height = continuous_content_height(page.height, page.page_count);
             controller.area.set_content_width(width);
             controller.area.set_content_height(height);
         } else {
