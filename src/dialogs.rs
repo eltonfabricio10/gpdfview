@@ -62,15 +62,14 @@ pub(crate) fn build_settings_dialog(
     let layout_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let layout_label = gtk::Label::new(Some("Layout padrão:"));
     layout_label.set_width_chars(18);
-    let layout_combo = gtk::ComboBoxText::new();
-    for value in ["single", "continuous", "two-page"] {
-        layout_combo.append_text(value);
-    }
-    layout_combo.set_active(Some(match settings.default_layout.as_str() {
+    let layout_values = ["single", "continuous", "two-page"];
+    let layout_model = gtk::StringList::new(&layout_values);
+    let layout_combo = gtk::DropDown::new(Some(layout_model.clone()), None::<gtk::Expression>);
+    layout_combo.set_selected(match settings.default_layout.as_str() {
         "continuous" => 1,
         "two-page" => 2,
         _ => 0,
-    }));
+    } as u32);
     layout_row.append(&layout_label);
     layout_row.append(&layout_combo);
     content.append(&layout_row);
@@ -137,17 +136,20 @@ pub(crate) fn build_settings_dialog(
     let settings_for_save = settings.clone();
     let shortcut_entries_for_save = shortcut_entries.clone();
     let layout_combo_for_save = layout_combo.clone();
+    let layout_values_for_save = layout_values;
     let zoom_entry_for_save = zoom_entry.clone();
     let sync_switch_for_save = sync_switch.clone();
     save_button.connect_clicked(move |_| {
         let mut next_settings = settings_for_save.clone();
-        next_settings.default_layout = layout_combo_for_save
-            .active_text()
-            .map(|value| value.to_string())
-            .unwrap_or_else(|| "single".to_string());
+        let selected_layout_index = layout_combo_for_save.selected() as usize;
+        next_settings.default_layout = layout_values_for_save
+            .get(selected_layout_index)
+            .copied()
+            .unwrap_or("single")
+            .to_string();
         next_settings.split_sync = sync_switch_for_save.is_active();
         if let Ok(parsed) = zoom_entry_for_save.text().to_string().parse::<f64>() {
-            next_settings.zoom_step = parsed.max(0.05).min(1.0);
+            next_settings.zoom_step = parsed.clamp(0.05, 1.0);
         }
         for ((action, _), entry) in shortcut_actions.iter().zip(shortcut_entries_for_save.iter()) {
             let value = entry.text().to_string();
