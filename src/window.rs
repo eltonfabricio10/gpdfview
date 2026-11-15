@@ -437,8 +437,8 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
     let page_total = gtk::Label::new(Some("/ 0"));
     let next_button = action_button("go-next-symbolic", "Next page");
     let search_entry = gtk::SearchEntry::new();
-    search_entry.set_placeholder_text(Some("Search in page"));
-    let search_button = action_button("system-search-symbolic", "Search in this page");
+    search_entry.set_placeholder_text(Some("Search in document"));
+    let search_button = action_button("system-search-symbolic", "Search in this document");
     let prev_match = action_button("go-up-symbolic", "Previous match");
     let next_match = action_button("go-down-symbolic", "Next match");
     let zoom_out = action_button("zoom-out-symbolic", "Zoom out");
