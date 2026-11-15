@@ -25,6 +25,8 @@ use gtk::gio;
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
+use std::sync::atomic::AtomicU64;
+use std::sync::{Arc, mpsc};
 
 #[cfg(test)]
 use std::fs;
@@ -42,6 +44,14 @@ use crate::viewer_state::{apply_render_request, normalize_rotation};
 pub(crate) const CACHE_LIMIT_BYTES: usize = 128 * 1024 * 1024;
 
 type StateChangeHook = Box<dyn Fn() + 'static>;
+
+pub(crate) struct SearchResponse {
+    pub(crate) generation: u64,
+    pub(crate) path: PathBuf,
+    pub(crate) query: String,
+    pub(crate) pivot_page: i32,
+    pub(crate) result: Result<Vec<crate::engine::DocumentTextMatch>, String>,
+}
 
 #[cfg(test)]
 fn rotated_page_dimensions(width_points: f64, height_points: f64, rotation: i32) -> (f64, f64) {
@@ -85,6 +95,9 @@ pub(crate) struct ViewerController {
     pub(crate) window: adw::ApplicationWindow,
     pub(crate) root: gtk::Box,
     pub(crate) state_change_hooks: Rc<RefCell<Vec<StateChangeHook>>>,
+    pub(crate) search_sender: mpsc::Sender<SearchResponse>,
+    pub(crate) search_receiver: Rc<RefCell<mpsc::Receiver<SearchResponse>>>,
+    pub(crate) search_generation: Arc<AtomicU64>,
 }
 
 impl ViewerController {
@@ -116,6 +129,8 @@ impl ViewerController {
     }
 
     pub(crate) fn open_document(&self, path: PathBuf) {
+        self.search_generation
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         remember_recent_document(&path);
         self.page_spin.set_sensitive(false);
         self.set_page_spin_value(1.0);

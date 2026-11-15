@@ -61,6 +61,7 @@ pub struct OutlineEntry {
 
 pub fn document_outline(path: &PathBuf) -> Result<Vec<OutlineEntry>, String> {
     let document = load_document(path)?;
+    let _guard = crate::poppler_lock::lock()?;
     let mut entries = Vec::new();
 
     unsafe {
@@ -225,15 +226,30 @@ pub fn find_text_rectangles_in_document(
     path: &PathBuf,
     query: &str,
 ) -> Result<Vec<DocumentTextMatch>, String> {
+    find_text_rectangles_in_document_cancellable(path, query, || false)
+}
+
+pub fn find_text_rectangles_in_document_cancellable<F>(
+    path: &PathBuf,
+    query: &str,
+    is_cancelled: F,
+) -> Result<Vec<DocumentTextMatch>, String>
+where
+    F: Fn() -> bool,
+{
     let trimmed = query.trim();
     if trimmed.is_empty() {
         return Ok(Vec::new());
     }
 
     let document = load_document(path)?;
+    let _guard = crate::poppler_lock::lock()?;
     let mut matches = Vec::new();
     let page_count = document.n_pages();
     for page_index in 0..page_count {
+        if is_cancelled() {
+            return Ok(Vec::new());
+        }
         let Some(page) = document.page(page_index) else {
             continue;
         };

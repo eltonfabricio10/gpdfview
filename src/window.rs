@@ -544,6 +544,8 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
     status.set_margin_bottom(6);
     root.append(&status);
 
+    let (search_sender, search_receiver) = std::sync::mpsc::channel();
+
     let controller = Rc::new(ViewerController {
         app: app.clone(),
         tab_manager: Rc::downgrade(&tab_manager),
@@ -570,6 +572,9 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
         window: window.clone(),
         root: root.clone(),
         state_change_hooks: Rc::new(RefCell::new(Vec::new())),
+        search_sender,
+        search_receiver: Rc::new(RefCell::new(search_receiver)),
+        search_generation: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
     });
 
     let draw_controller = controller.clone();

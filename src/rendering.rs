@@ -1,5 +1,7 @@
 use std::path::PathBuf;
+use std::sync::atomic::Ordering;
 use std::time::Instant;
+use std::thread;
 
 use gtk4::cairo::{Format, ImageSurface};
 use gtk4::prelude::*;
@@ -221,9 +223,19 @@ pub(crate) fn poll(controller: &ViewerController) {
             Err(error) => controller.status.set_text(&format!("Print failed: {error}")),
         }
     }
+    let search_responses = controller.search_receiver.borrow().try_iter().collect::<Vec<_>>();
+    for response in search_responses {
+        let current_generation = controller.search_generation.load(Ordering::Relaxed);
+        let current_path = controller.state.borrow().path.clone();
+        if response.generation != current_generation || current_path.as_ref() != Some(&response.path) {
+            continue;
+        }
+        complete_document_search(controller, response);
+    }
 }
 
 pub(crate) fn search_current_page(controller: &ViewerController) {
+    let generation = controller.search_generation.fetch_add(1, Ordering::Relaxed) + 1;
     let state = controller.state.borrow();
     let Some(path) = state.path.clone() else {
         controller.status.set_text("Open a PDF document before searching.");
@@ -237,18 +249,54 @@ pub(crate) fn search_current_page(controller: &ViewerController) {
     let page_index = state.page_index;
     drop(state);
 
-    match crate::engine::find_text_rectangles_in_document(&path, &query) {
+    {
+        let mut state = controller.state.borrow_mut();
+        state.search_query = query.clone();
+        state.search_results.clear();
+        state.search_global_index = 0;
+        state.search_highlights.clear();
+        state.search_index = 0;
+        state.pending_search_rect = None;
+    }
+    controller.status.set_text("Searching document…");
+    controller.area.queue_draw();
+
+    let sender = controller.search_sender.clone();
+    let cancellation_generation = controller.search_generation.clone();
+    if let Err(error) = thread::Builder::new()
+        .name("gpdfview-search".into())
+        .spawn(move || {
+            let result = crate::engine::find_text_rectangles_in_document_cancellable(
+                &path,
+                &query,
+                || cancellation_generation.load(Ordering::Relaxed) != generation,
+            );
+            let _ = sender.send(crate::app::SearchResponse {
+                generation,
+                path,
+                query,
+                pivot_page: page_index,
+                result,
+            });
+        })
+    {
+        controller.status.set_text(&format!("Could not start search: {error}"));
+    }
+}
+
+fn complete_document_search(controller: &ViewerController, response: crate::app::SearchResponse) {
+    match response.result {
         Ok(matches) => {
             let mut ordered_matches = matches;
             if let Some(pivot) = ordered_matches
                 .iter()
-                .position(|entry| entry.page_index >= page_index)
+                .position(|entry| entry.page_index >= response.pivot_page)
             {
                 ordered_matches.rotate_left(pivot);
             }
             {
                 let mut state = controller.state.borrow_mut();
-                state.search_query = query.clone();
+                state.search_query = response.query.clone();
                 state.search_results = ordered_matches
                     .into_iter()
                     .map(|entry| crate::viewer_state::SearchOccurrence {
@@ -264,9 +312,11 @@ pub(crate) fn search_current_page(controller: &ViewerController) {
             let total = controller.state.borrow().search_results.len();
             if total == 0 {
                 controller.status.set_text(&format!(
-                    "No matches found for \"{query}\" in this document.",
+                    "No matches found for \"{}\" in this document.",
+                    response.query,
                 ));
                 controller.area.queue_draw();
+                controller.notify_state_changed();
                 return;
             }
             controller.focus_global_search_result(0);
@@ -279,6 +329,7 @@ pub(crate) fn search_current_page(controller: &ViewerController) {
             state.pending_search_rect = None;
             controller.area.queue_draw();
             controller.status.set_text(&format!("Search failed: {error}"));
+            controller.notify_state_changed();
         }
     }
 }
