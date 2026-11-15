@@ -60,6 +60,16 @@ pub struct OutlineEntry {
 }
 
 pub fn document_outline(path: &PathBuf) -> Result<Vec<OutlineEntry>, String> {
+    document_outline_cancellable(path, || false)
+}
+
+pub fn document_outline_cancellable<F>(
+    path: &PathBuf,
+    is_cancelled: F,
+) -> Result<Vec<OutlineEntry>, String>
+where
+    F: Fn() -> bool,
+{
     let document = load_document(path)?;
     let _guard = crate::poppler_lock::lock()?;
     let mut entries = Vec::new();
@@ -69,7 +79,7 @@ pub fn document_outline(path: &PathBuf) -> Result<Vec<OutlineEntry>, String> {
         if root.is_null() {
             return Ok(entries);
         }
-        collect_outline_entries(root, 0, &mut entries);
+        collect_outline_entries(root, 0, &mut entries, &is_cancelled);
         poppler::ffi::poppler_index_iter_free(root);
     }
 
@@ -82,8 +92,24 @@ pub fn render_page_thumbnail(
     rotation: i32,
     max_edge_px: i32,
 ) -> Result<ImageSurface, String> {
+    render_page_thumbnail_cancellable(path, page_index, rotation, max_edge_px, || false)
+}
+
+pub fn render_page_thumbnail_cancellable<F>(
+    path: &PathBuf,
+    page_index: i32,
+    rotation: i32,
+    max_edge_px: i32,
+    is_cancelled: F,
+) -> Result<ImageSurface, String>
+where
+    F: Fn() -> bool,
+{
     let document = load_document(path)?;
     let _guard = crate::poppler_lock::lock()?;
+    if is_cancelled() {
+        return Err("Thumbnail request was cancelled".into());
+    }
     let page_count = document.n_pages();
     if page_index < 0 || page_index >= page_count {
         return Err(format!("Page {} does not exist", page_index + 1));
@@ -122,15 +148,19 @@ unsafe fn collect_outline_entries(
     iter: *mut poppler::ffi::PopplerIndexIter,
     depth: u32,
     entries: &mut Vec<OutlineEntry>,
+    is_cancelled: &impl Fn() -> bool,
 ) {
     loop {
+        if is_cancelled() {
+            break;
+        }
         if let Some(entry) = outline_entry_from_iter(iter, depth) {
             entries.push(entry);
         }
 
         let child = poppler::ffi::poppler_index_iter_get_child(iter);
         if !child.is_null() {
-            collect_outline_entries(child, depth + 1, entries);
+            collect_outline_entries(child, depth + 1, entries, is_cancelled);
             poppler::ffi::poppler_index_iter_free(child);
         }
 

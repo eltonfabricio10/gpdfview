@@ -3,6 +3,11 @@ use libadwaita as adw;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc;
+use std::sync::Arc;
+use std::thread;
+use std::time::Duration;
 
 use crate::app::ViewerController;
 use crate::cache::LruCache;
@@ -18,6 +23,13 @@ const THUMBNAIL_MAX_EDGE: i32 = 132;
 const THUMBNAIL_CACHE_BYTES: usize = 24 * 1024 * 1024;
 const THUMBNAIL_FRAME_WIDTH: i32 = 96;
 const THUMBNAIL_FRAME_HEIGHT: i32 = 136;
+
+struct ThumbnailPixels {
+    width: i32,
+    height: i32,
+    stride: i32,
+    pixels: Vec<u8>,
+}
 
 #[derive(Clone)]
 struct SidebarOpenContext {
@@ -87,35 +99,17 @@ fn append_sidebar_entry(
 }
 
 fn thumbnail_surface_for_page(
-    controller: &ViewerController,
     thumbnail_cache: &Rc<RefCell<LruCache<RenderKey, gtk4::cairo::ImageSurface>>>,
-    page_index: i32,
+    key: &RenderKey,
 ) -> Option<gtk4::cairo::ImageSurface> {
-    let state = controller.state.borrow();
-    let path = state.path.clone()?;
-    let scale = f64::from(THUMBNAIL_MAX_EDGE) / 1000.0;
-    let rotation = state.rotation;
-    let key = RenderKey::new(path.clone(), page_index, scale, rotation);
-    drop(state);
-
-    if let Some(cached) = thumbnail_cache.borrow_mut().get(&key).cloned() {
-        return Some(cached);
-    }
-
-    let rendered = crate::engine::render_page_thumbnail(&path, page_index, rotation, THUMBNAIL_MAX_EDGE).ok()?;
-    let bytes = rendered
-        .stride()
-        .max(0)
-        .saturating_mul(rendered.height().max(0)) as usize;
-    thumbnail_cache
-        .borrow_mut()
-        .insert(key, rendered.clone(), bytes);
-    Some(rendered)
+    thumbnail_cache.borrow_mut().get(key).cloned()
 }
 
 fn build_page_thumbnail_button(
     controller: &ViewerController,
     thumbnail_cache: &Rc<RefCell<LruCache<RenderKey, gtk4::cairo::ImageSurface>>>,
+    thumbnail_generation: Arc<AtomicU64>,
+    generation_id: u64,
     page_index: i32,
     is_current: bool,
 ) -> gtk4::Button {
@@ -128,49 +122,120 @@ fn build_page_thumbnail_button(
     content.set_margin_top(4);
     content.set_margin_bottom(4);
 
-    if let Some(surface) = thumbnail_surface_for_page(controller, thumbnail_cache, page_index) {
-        let preview = gtk4::DrawingArea::new();
-        preview.set_content_width(THUMBNAIL_FRAME_WIDTH);
-        preview.set_content_height(THUMBNAIL_FRAME_HEIGHT);
-        preview.set_size_request(THUMBNAIL_FRAME_WIDTH, THUMBNAIL_FRAME_HEIGHT);
-        let thumbnail = surface.clone();
-        preview.set_draw_func(move |_, context, _, _| {
-            let frame_width = f64::from(THUMBNAIL_FRAME_WIDTH);
-            let frame_height = f64::from(THUMBNAIL_FRAME_HEIGHT);
-            context.set_source_rgb(0.95, 0.95, 0.96);
-            context.rectangle(0.0, 0.0, frame_width, frame_height);
-            let _ = context.fill();
+    let (path, rotation) = {
+        let state = controller.state.borrow();
+        (state.path.clone(), state.rotation)
+    };
+    let scale = f64::from(THUMBNAIL_MAX_EDGE) / 1000.0;
+    let key = path.as_ref().map(|path| RenderKey::new(path.clone(), page_index, scale, rotation));
+    let thumbnail_state = Rc::new(RefCell::new(
+        key.as_ref()
+            .and_then(|key| thumbnail_surface_for_page(thumbnail_cache, key)),
+    ));
+    let preview = gtk4::DrawingArea::new();
+    preview.set_content_width(THUMBNAIL_FRAME_WIDTH);
+    preview.set_content_height(THUMBNAIL_FRAME_HEIGHT);
+    preview.set_size_request(THUMBNAIL_FRAME_WIDTH, THUMBNAIL_FRAME_HEIGHT);
+    let thumbnail = thumbnail_state.clone();
+    preview.set_draw_func(move |_, context, _, _| {
+        let frame_width = f64::from(THUMBNAIL_FRAME_WIDTH);
+        let frame_height = f64::from(THUMBNAIL_FRAME_HEIGHT);
+        context.set_source_rgb(0.95, 0.95, 0.96);
+        context.rectangle(0.0, 0.0, frame_width, frame_height);
+        let _ = context.fill();
 
-            let page_margin = 6.0;
-            let page_width = frame_width - (page_margin * 2.0);
-            let page_height = frame_height - (page_margin * 2.0);
-            context.set_source_rgb(1.0, 1.0, 1.0);
-            context.rectangle(page_margin, page_margin, page_width, page_height);
-            let _ = context.fill_preserve();
-            context.set_source_rgba(0.0, 0.0, 0.0, 0.2);
-            context.set_line_width(1.0);
-            let _ = context.stroke();
+        let page_margin = 6.0;
+        let page_width = frame_width - (page_margin * 2.0);
+        let page_height = frame_height - (page_margin * 2.0);
+        context.set_source_rgb(1.0, 1.0, 1.0);
+        context.rectangle(page_margin, page_margin, page_width, page_height);
+        let _ = context.fill_preserve();
+        context.set_source_rgba(0.0, 0.0, 0.0, 0.2);
+        context.set_line_width(1.0);
+        let _ = context.stroke();
 
-            let surface_width = f64::from(thumbnail.width());
-            let surface_height = f64::from(thumbnail.height());
-            let scale = (page_width / surface_width)
-                .min(page_height / surface_height)
-                .min(1.0);
-            let draw_width = surface_width * scale;
-            let draw_height = surface_height * scale;
-            let draw_x = page_margin + ((page_width - draw_width) / 2.0);
-            let draw_y = page_margin + ((page_height - draw_height) / 2.0);
+        let Some(thumbnail) = thumbnail.borrow().clone() else {
+            return;
+        };
+        let surface_width = f64::from(thumbnail.width());
+        let surface_height = f64::from(thumbnail.height());
+        let scale = (page_width / surface_width)
+            .min(page_height / surface_height)
+            .min(1.0);
+        let draw_width = surface_width * scale;
+        let draw_height = surface_height * scale;
+        let draw_x = page_margin + ((page_width - draw_width) / 2.0);
+        let draw_y = page_margin + ((page_height - draw_height) / 2.0);
 
-            context.save().ok();
-            context.translate(draw_x, draw_y);
-            context.scale(scale, scale);
-            if context.set_source_surface(&thumbnail, 0.0, 0.0).is_ok() {
-                let _ = context.paint();
+        context.save().ok();
+        context.translate(draw_x, draw_y);
+        context.scale(scale, scale);
+        if context.set_source_surface(&thumbnail, 0.0, 0.0).is_ok() {
+            let _ = context.paint();
+        }
+        context.restore().ok();
+    });
+
+    if thumbnail_state.borrow().is_none() {
+        if let (Some(path), Some(key)) = (path, key) {
+            let preview_weak = preview.downgrade();
+            let state_for_result = thumbnail_state.clone();
+            let cache_for_result = thumbnail_cache.clone();
+            let generation_for_worker = thumbnail_generation.clone();
+            let (sender, receiver) = mpsc::channel();
+            if thread::Builder::new()
+                .name("gpdfview-thumbnail".into())
+                .spawn(move || {
+                    let result = crate::engine::render_page_thumbnail_cancellable(
+                        &path,
+                        page_index,
+                        rotation,
+                        THUMBNAIL_MAX_EDGE,
+                        || generation_for_worker.load(Ordering::Relaxed) != generation_id,
+                    )
+                    .and_then(|mut surface| {
+                        surface.flush();
+                        let width = surface.width();
+                        let height = surface.height();
+                        let stride = surface.stride();
+                        let pixels = surface.data().map_err(|error| error.to_string())?.to_vec();
+                        Ok(ThumbnailPixels { width, height, stride, pixels })
+                    });
+                    let _ = sender.send(result);
+                })
+                .is_ok()
+            {
+                gtk4::glib::timeout_add_local(Duration::from_millis(20), move || {
+                    match receiver.try_recv() {
+                        Ok(Ok(pixels)) => {
+                            let bytes = pixels.pixels.len();
+                            if let Ok(surface) = gtk4::cairo::ImageSurface::create_for_data(
+                                pixels.pixels,
+                                gtk4::cairo::Format::ARgb32,
+                                pixels.width,
+                                pixels.height,
+                                pixels.stride,
+                            ) {
+                                cache_for_result
+                                    .borrow_mut()
+                                    .insert(key.clone(), surface.clone(), bytes);
+                                *state_for_result.borrow_mut() = Some(surface);
+                                if let Some(preview) = preview_weak.upgrade() {
+                                    preview.queue_draw();
+                                }
+                            }
+                            gtk4::glib::ControlFlow::Break
+                        }
+                        Ok(Err(_)) | Err(mpsc::TryRecvError::Disconnected) => {
+                            gtk4::glib::ControlFlow::Break
+                        }
+                        Err(mpsc::TryRecvError::Empty) => gtk4::glib::ControlFlow::Continue,
+                    }
+                });
             }
-            context.restore().ok();
-        });
-        content.append(&preview);
+        }
     }
+    content.append(&preview);
 
     let label = gtk4::Label::new(Some(&format!("{}", page_index + 1)));
     content.append(&label);
@@ -193,7 +258,9 @@ fn populate_pages_flow(
     pages_flow: &gtk4::FlowBox,
     controller: &ViewerController,
     thumbnail_cache: &Rc<RefCell<LruCache<RenderKey, gtk4::cairo::ImageSurface>>>,
+    thumbnail_generation: &Arc<AtomicU64>,
 ) {
+    let generation_id = thumbnail_generation.fetch_add(1, Ordering::Relaxed) + 1;
     while let Some(child) = pages_flow.first_child() {
         pages_flow.remove(&child);
     }
@@ -215,6 +282,8 @@ fn populate_pages_flow(
         let page_button = build_page_thumbnail_button(
             controller,
             thumbnail_cache,
+            thumbnail_generation.clone(),
+            generation_id,
             page_index,
             page_index == state.page_index,
         );
@@ -230,37 +299,84 @@ fn section_toggle(label: &str, active: bool) -> gtk4::ToggleButton {
     button
 }
 
-fn populate_outline_list(list: &gtk4::ListBox, controller: &ViewerController) {
+fn populate_outline_list(
+    list: &gtk4::ListBox,
+    controller: Rc<ViewerController>,
+    generation: Arc<AtomicU64>,
+) {
+    let request_id = generation.fetch_add(1, Ordering::Relaxed) + 1;
     while let Some(child) = list.first_child() {
         list.remove(&child);
     }
 
     let Some(path) = controller.state.borrow().path.clone() else {
-        let row = gtk4::ListBoxRow::new();
-        let label = gtk4::Label::new(Some("Open a document to load bookmarks."));
-        label.set_xalign(0.0);
-        label.set_wrap(true);
-        label.set_margin_start(8);
-        label.set_margin_end(8);
-        label.set_margin_top(4);
-        label.set_margin_bottom(4);
-        row.set_child(Some(&label));
-        list.append(&row);
+        append_outline_message(list, "Open a document to load bookmarks.");
         return;
     };
 
-    match crate::engine::document_outline(&path) {
+    append_outline_message(list, "Loading document outline…");
+    let (sender, receiver) = mpsc::channel();
+    let path_for_worker = path.clone();
+    let generation_for_worker = generation.clone();
+    if let Err(error) = thread::Builder::new()
+        .name("gpdfview-outline".into())
+        .spawn(move || {
+            let result = crate::engine::document_outline_cancellable(
+                &path_for_worker,
+                || generation_for_worker.load(Ordering::Relaxed) != request_id,
+            );
+            let _ = sender.send(result);
+        })
+    {
+        while let Some(child) = list.first_child() {
+            list.remove(&child);
+        }
+        append_outline_message(list, &format!("Could not start outline loading: {error}"));
+        return;
+    }
+
+    let weak_list = list.downgrade();
+    gtk4::glib::timeout_add_local(Duration::from_millis(20), move || {
+        if generation.load(Ordering::Relaxed) != request_id {
+            return gtk4::glib::ControlFlow::Break;
+        }
+        match receiver.try_recv() {
+            Ok(result) => {
+                if let Some(list) = weak_list.upgrade() {
+                    while let Some(child) = list.first_child() {
+                        list.remove(&child);
+                    }
+                    populate_outline_result(&list, &controller, result);
+                }
+                gtk4::glib::ControlFlow::Break
+            }
+            Err(mpsc::TryRecvError::Disconnected) => gtk4::glib::ControlFlow::Break,
+            Err(mpsc::TryRecvError::Empty) => gtk4::glib::ControlFlow::Continue,
+        }
+    });
+}
+
+fn append_outline_message(list: &gtk4::ListBox, message: &str) {
+    let row = gtk4::ListBoxRow::new();
+    let label = gtk4::Label::new(Some(message));
+    label.set_xalign(0.0);
+    label.set_wrap(true);
+    label.set_margin_start(8);
+    label.set_margin_end(8);
+    label.set_margin_top(4);
+    label.set_margin_bottom(4);
+    row.set_child(Some(&label));
+    list.append(&row);
+}
+
+fn populate_outline_result(
+    list: &gtk4::ListBox,
+    controller: &ViewerController,
+    result: Result<Vec<crate::engine::OutlineEntry>, String>,
+) {
+    match result {
         Ok(entries) if entries.is_empty() => {
-            let row = gtk4::ListBoxRow::new();
-            let label = gtk4::Label::new(Some("This document has no outline/bookmarks."));
-            label.set_xalign(0.0);
-            label.set_wrap(true);
-            label.set_margin_start(8);
-            label.set_margin_end(8);
-            label.set_margin_top(4);
-            label.set_margin_bottom(4);
-            row.set_child(Some(&label));
-            list.append(&row);
+            append_outline_message(list, "This document has no outline/bookmarks.");
         }
         Ok(entries) => {
             for entry in entries {
@@ -281,16 +397,7 @@ fn populate_outline_list(list: &gtk4::ListBox, controller: &ViewerController) {
             }
         }
         Err(error) => {
-            let row = gtk4::ListBoxRow::new();
-            let label = gtk4::Label::new(Some(&format!("Could not load outline: {error}")));
-            label.set_xalign(0.0);
-            label.set_wrap(true);
-            label.set_margin_start(8);
-            label.set_margin_end(8);
-            label.set_margin_top(4);
-            label.set_margin_bottom(4);
-            row.set_child(Some(&label));
-            list.append(&row);
+            append_outline_message(list, &format!("Could not load outline: {error}"));
         }
     }
 }
@@ -486,7 +593,13 @@ pub fn build_sidebar(
     pages_flow.set_row_spacing(8);
     pages_flow.set_column_spacing(0);
     let thumbnail_cache = Rc::new(RefCell::new(LruCache::new(THUMBNAIL_CACHE_BYTES)));
-    populate_pages_flow(&pages_flow, &controller, &thumbnail_cache);
+    let thumbnail_generation = Arc::new(AtomicU64::new(0));
+    populate_pages_flow(
+        &pages_flow,
+        &controller,
+        &thumbnail_cache,
+        &thumbnail_generation,
+    );
     let thumbnails_section = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     thumbnails_section.append(&pages_flow);
     sidebar.append(&thumbnails_section);
@@ -505,11 +618,21 @@ pub fn build_sidebar(
     let outline_list = gtk4::ListBox::new();
     outline_list.set_selection_mode(gtk4::SelectionMode::None);
     outline_list.set_css_classes(&["boxed-list"]);
-    populate_outline_list(&outline_list, &controller);
-    let outline_controller = controller.clone();
+    let outline_generation = Arc::new(AtomicU64::new(0));
+    populate_outline_list(&outline_list, controller.clone(), outline_generation.clone());
+    let outline_manager = Rc::downgrade(&tab_manager);
     let outline_list_for_refresh = outline_list.clone();
+    let outline_generation_for_refresh = outline_generation.clone();
     refresh_outline.connect_clicked(move |_| {
-        populate_outline_list(&outline_list_for_refresh, &outline_controller);
+        if let Some(manager) = outline_manager.upgrade() {
+            if let Some(controller) = manager.borrow().active_controller() {
+                populate_outline_list(
+                    &outline_list_for_refresh,
+                    controller,
+                    outline_generation_for_refresh.clone(),
+                );
+            }
+        }
     });
     let outline_section = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
     outline_section.append(&outline_header);
@@ -631,6 +754,7 @@ pub fn build_sidebar(
     let active_search = search_list.clone();
     let active_bookmarks = app_bookmarks_list.clone();
     let active_thumbnail_cache = thumbnail_cache.clone();
+    let active_thumbnail_generation = thumbnail_generation.clone();
     let observed_controllers = Rc::new(RefCell::new(std::collections::HashSet::new()));
     let weak_tab_manager = Rc::downgrade(&tab_manager);
     tab_manager
@@ -640,8 +764,13 @@ pub fn build_sidebar(
                 &active_pages,
                 &active_controller,
                 &active_thumbnail_cache,
+                &active_thumbnail_generation,
             );
-            populate_outline_list(&active_outline, &active_controller);
+            populate_outline_list(
+                &active_outline,
+                active_controller.clone(),
+                outline_generation.clone(),
+            );
             populate_search_results_list(&active_search, &active_controller);
             populate_app_bookmarks_list(&active_bookmarks, &active_controller);
 
@@ -654,7 +783,9 @@ pub fn build_sidebar(
             let outline = active_outline.clone();
             let search = active_search.clone();
             let bookmarks = active_bookmarks.clone();
+            let outline_generation = outline_generation.clone();
             let cache = active_thumbnail_cache.clone();
+            let thumbnail_generation = active_thumbnail_generation.clone();
             let manager = weak_tab_manager.clone();
             active_controller.subscribe_state_changes(move || {
                 let Some(manager) = manager.upgrade() else {
@@ -670,8 +801,12 @@ pub fn build_sidebar(
                 let Some(controller) = manager.borrow().active_controller() else {
                     return;
                 };
-                populate_pages_flow(&pages, &controller, &cache);
-                populate_outline_list(&outline, &controller);
+                populate_pages_flow(&pages, &controller, &cache, &thumbnail_generation);
+                populate_outline_list(
+                    &outline,
+                    controller.clone(),
+                    outline_generation.clone(),
+                );
                 populate_search_results_list(&search, &controller);
                 populate_app_bookmarks_list(&bookmarks, &controller);
             });
