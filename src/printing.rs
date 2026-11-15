@@ -117,6 +117,8 @@ fn print_pdf(path: &Path, options: &PrintOptions) -> Result<PrintOutcome, String
             })?;
             let mut fallback_options = options.clone();
             fallback_options.page_range = None;
+            // The generated PDF already contains the requested page scale.
+            fallback_options.scale_percent = 100;
             let output = submit_to_cups(&rendered.0, &fallback_options).map_err(|fallback_error| {
                 format!(
                     "Direct PDF submission failed ({direct_error}); rendered fallback failed ({fallback_error})"
