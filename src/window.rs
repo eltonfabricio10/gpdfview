@@ -3,11 +3,11 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
 
+use adw::prelude::*;
 use gtk4 as gtk;
 use gtk4::cairo::ImageSurface;
 use gtk4::prelude::*;
 use libadwaita as adw;
-use adw::prelude::*;
 
 use crate::app::ViewerController;
 use crate::cache::LruCache;
@@ -147,11 +147,15 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     header.pack_start(&open_button);
     let fullscreen_button = action_button("view-fullscreen-symbolic", "Toggle fullscreen");
     header.pack_end(&fullscreen_button);
-    let presentation_button = action_button("view-presentation-symbolic", "Toggle presentation mode");
+    let presentation_button =
+        action_button("view-presentation-symbolic", "Toggle presentation mode");
     header.pack_end(&presentation_button);
     let properties_button = action_button("document-properties-symbolic", "Document properties");
     header.pack_end(&properties_button);
-    let print_button = action_button("printer-symbolic", "Send the current PDF to the default printer");
+    let print_button = action_button(
+        "printer-symbolic",
+        "Send the current PDF to the default printer",
+    );
     print_button.set_sensitive(false);
     header.pack_end(&print_button);
 
@@ -192,7 +196,9 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
                 .and_then(|name| name.to_str())
                 .unwrap_or("Documento")
                 .to_string();
-            tab_manager.borrow().add_tab_with_path(&initial.root, &title_text, Some(path.clone()));
+            tab_manager
+                .borrow()
+                .add_tab_with_path(&initial.root, &title_text, Some(path.clone()));
             tab_manager
                 .borrow()
                 .register_controller(&initial.root, initial.clone());
@@ -286,9 +292,14 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
 
     let menu_sidebar = sidebar.clone();
     let menu_sidebar_controller = initial.clone();
-    let view_sidebar_item = append_menu_item(&view_menu_box, "Alternar painel lateral", move || {
-        dispatch_ui_command(&menu_sidebar_controller, UiCommand::ToggleSidebar, Some(&menu_sidebar));
-    });
+    let view_sidebar_item =
+        append_menu_item(&view_menu_box, "Alternar painel lateral", move || {
+            dispatch_ui_command(
+                &menu_sidebar_controller,
+                UiCommand::ToggleSidebar,
+                Some(&menu_sidebar),
+            );
+        });
     let view_fullscreen_manager = tab_manager.clone();
     let view_fullscreen_fallback = initial.clone();
     let view_fullscreen_item = append_menu_item(&view_menu_box, "Tela cheia", move || {
@@ -309,23 +320,44 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     });
     let view_split_horizontal_manager = tab_manager.clone();
     let view_split_horizontal_fallback = initial.clone();
-    let view_split_horizontal_item = append_menu_item(&view_menu_box, "Dividir horizontalmente", move || {
-        dispatch_ui_command(&active_controller(&view_split_horizontal_manager, &view_split_horizontal_fallback), UiCommand::ToggleSplitViewHorizontal, None);
-    });
+    let view_split_horizontal_item =
+        append_menu_item(&view_menu_box, "Dividir horizontalmente", move || {
+            dispatch_ui_command(
+                &active_controller(
+                    &view_split_horizontal_manager,
+                    &view_split_horizontal_fallback,
+                ),
+                UiCommand::ToggleSplitViewHorizontal,
+                None,
+            );
+        });
     let view_split_vertical_manager = tab_manager.clone();
     let view_split_vertical_fallback = initial.clone();
-    let view_split_vertical_item = append_menu_item(&view_menu_box, "Dividir verticalmente", move || {
-        dispatch_ui_command(&active_controller(&view_split_vertical_manager, &view_split_vertical_fallback), UiCommand::ToggleSplitViewVertical, None);
-    });
+    let view_split_vertical_item =
+        append_menu_item(&view_menu_box, "Dividir verticalmente", move || {
+            dispatch_ui_command(
+                &active_controller(&view_split_vertical_manager, &view_split_vertical_fallback),
+                UiCommand::ToggleSplitViewVertical,
+                None,
+            );
+        });
     let view_close_split_manager = tab_manager.clone();
     let view_close_split_fallback = initial.clone();
     let view_close_split_item = append_menu_item(&view_menu_box, "Fechar divisao", move || {
-        dispatch_ui_command(&active_controller(&view_close_split_manager, &view_close_split_fallback), UiCommand::CloseSplitView, None);
+        dispatch_ui_command(
+            &active_controller(&view_close_split_manager, &view_close_split_fallback),
+            UiCommand::CloseSplitView,
+            None,
+        );
     });
     let view_sync_split_manager = tab_manager.clone();
     let view_sync_split_fallback = initial.clone();
     let view_sync_split_item = append_menu_item(&view_menu_box, "Sincronizar panes", move || {
-        dispatch_ui_command(&active_controller(&view_sync_split_manager, &view_sync_split_fallback), UiCommand::ToggleSplitSync, None);
+        dispatch_ui_command(
+            &active_controller(&view_sync_split_manager, &view_sync_split_fallback),
+            UiCommand::ToggleSplitSync,
+            None,
+        );
     });
 
     let menu_tabs_controller = initial.clone();
@@ -350,33 +382,58 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
             )
             .is_some()
             {
-                restore_tab_controller.status.set_text("Última aba fechada restaurada.");
+                restore_tab_controller
+                    .status
+                    .set_text("Última aba fechada restaurada.");
             }
         } else {
-            restore_tab_controller.status.set_text("Não há aba fechada para restaurar.");
+            restore_tab_controller
+                .status
+                .set_text("Não há aba fechada para restaurar.");
         }
     });
 
     let menu_favorite_manager = tab_manager.clone();
     let menu_favorite_fallback = initial.clone();
-    let bookmarks_toggle_item = append_menu_item(&bookmarks_menu_box, "Alternar favorito", move || {
-        dispatch_ui_command(&active_controller(&menu_favorite_manager, &menu_favorite_fallback), UiCommand::ToggleFavoriteDocument, None);
-    });
+    let bookmarks_toggle_item =
+        append_menu_item(&bookmarks_menu_box, "Alternar favorito", move || {
+            dispatch_ui_command(
+                &active_controller(&menu_favorite_manager, &menu_favorite_fallback),
+                UiCommand::ToggleFavoriteDocument,
+                None,
+            );
+        });
     let menu_page_bookmark_manager = tab_manager.clone();
     let menu_page_bookmark_fallback = initial.clone();
-    let page_bookmark_toggle_item = append_menu_item(&bookmarks_menu_box, "Alternar marcador da página", move || {
-        dispatch_ui_command(&active_controller(&menu_page_bookmark_manager, &menu_page_bookmark_fallback), UiCommand::ToggleCurrentPageBookmark, None);
-    });
+    let page_bookmark_toggle_item = append_menu_item(
+        &bookmarks_menu_box,
+        "Alternar marcador da página",
+        move || {
+            dispatch_ui_command(
+                &active_controller(&menu_page_bookmark_manager, &menu_page_bookmark_fallback),
+                UiCommand::ToggleCurrentPageBookmark,
+                None,
+            );
+        },
+    );
 
     let menu_settings_manager = tab_manager.clone();
     let menu_settings_fallback = initial.clone();
     let help_settings_item = append_menu_item(&help_menu_box, "Configurações", move || {
-        dispatch_ui_command(&active_controller(&menu_settings_manager, &menu_settings_fallback), UiCommand::OpenSettingsDialog, None);
+        dispatch_ui_command(
+            &active_controller(&menu_settings_manager, &menu_settings_fallback),
+            UiCommand::OpenSettingsDialog,
+            None,
+        );
     });
     let menu_about_manager = tab_manager.clone();
     let menu_about_fallback = initial.clone();
     let help_about_item = append_menu_item(&help_menu_box, "Sobre", move || {
-        dispatch_ui_command(&active_controller(&menu_about_manager, &menu_about_fallback), UiCommand::ShowAbout, None);
+        dispatch_ui_command(
+            &active_controller(&menu_about_manager, &menu_about_fallback),
+            UiCommand::ShowAbout,
+            None,
+        );
     });
 
     // Keep references alive and update sensitivity based on document availability.
@@ -402,27 +459,41 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         bookmarks_toggle_item,
         page_bookmark_toggle_item,
     ]);
-    tab_manager.borrow().subscribe_active_controller(move |controller| {
-        let has_document = controller.state.borrow().path.is_some();
-        for item in doc_sensitive_items.iter() {
-            item.set_sensitive(has_document);
-        }
-    });
+    tab_manager
+        .borrow()
+        .subscribe_active_controller(move |controller| {
+            let has_document = controller.state.borrow().path.is_some();
+            for item in doc_sensitive_items.iter() {
+                item.set_sensitive(has_document);
+            }
+        });
 
     let fullscreen_manager = tab_manager.clone();
     let fullscreen_fallback = initial.clone();
     fullscreen_button.connect_clicked(move |_| {
-        dispatch_ui_command(&active_controller(&fullscreen_manager, &fullscreen_fallback), UiCommand::ToggleFullscreen, None);
+        dispatch_ui_command(
+            &active_controller(&fullscreen_manager, &fullscreen_fallback),
+            UiCommand::ToggleFullscreen,
+            None,
+        );
     });
     let properties_manager = tab_manager.clone();
     let properties_fallback = initial.clone();
     properties_button.connect_clicked(move |_| {
-        dispatch_ui_command(&active_controller(&properties_manager, &properties_fallback), UiCommand::ShowDocumentProperties, None);
+        dispatch_ui_command(
+            &active_controller(&properties_manager, &properties_fallback),
+            UiCommand::ShowDocumentProperties,
+            None,
+        );
     });
     let presentation_manager = tab_manager.clone();
     let presentation_fallback = initial.clone();
     presentation_button.connect_clicked(move |_| {
-        dispatch_ui_command(&active_controller(&presentation_manager, &presentation_fallback), UiCommand::TogglePresentation, None);
+        dispatch_ui_command(
+            &active_controller(&presentation_manager, &presentation_fallback),
+            UiCommand::TogglePresentation,
+            None,
+        );
     });
     open_button.connect_clicked({
         let open_controller = open_controller.clone();
@@ -463,7 +534,9 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     Some(initial)
 }
 
-pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -> Rc<ViewerController> {
+pub(crate) fn create_document_controller(
+    params: DocumentControllerParams<'_>,
+) -> Rc<ViewerController> {
     let DocumentControllerParams {
         app,
         window,
@@ -590,7 +663,11 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
             let Some(path) = state.path.clone() else {
                 drop(state);
                 context.set_source_rgb(0.82, 0.83, 0.85);
-                context.select_font_face("Sans", gtk4::cairo::FontSlant::Normal, gtk4::cairo::FontWeight::Normal);
+                context.select_font_face(
+                    "Sans",
+                    gtk4::cairo::FontSlant::Normal,
+                    gtk4::cairo::FontWeight::Normal,
+                );
                 context.set_font_size(16.0);
                 context.move_to(24.0, 40.0);
                 let _ = context.show_text("Open a PDF to start reading");
@@ -651,7 +728,12 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
                     context.set_line_width(1.0);
                     let _ = context.stroke();
 
-                    let key = crate::viewer_state::RenderKey::new(path.clone(), page_index, scale, rotation);
+                    let key = crate::viewer_state::RenderKey::new(
+                        path.clone(),
+                        page_index,
+                        scale,
+                        rotation,
+                    );
                     let page_surface = draw_controller
                         .cache
                         .borrow_mut()
@@ -676,7 +758,8 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
 
                     if !highlights.is_empty() && page_index == current_page {
                         context.set_source_rgba(1.0, 0.9, 0.1, 0.45);
-                        let highlight_rects = cairo_search_highlight_rects(page_height_points, scale, &highlights);
+                        let highlight_rects =
+                            cairo_search_highlight_rects(page_height_points, scale, &highlights);
                         for (left, top, right, bottom) in highlight_rects {
                             context.rectangle(x + left, y + top, right - left, bottom - top);
                             let _ = context.fill();
@@ -713,7 +796,12 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
                 }
             };
             for page_index in pages {
-                let key = crate::viewer_state::RenderKey::new(path.clone(), page_index, state.scale, state.rotation);
+                let key = crate::viewer_state::RenderKey::new(
+                    path.clone(),
+                    page_index,
+                    state.scale,
+                    state.rotation,
+                );
                 let cached = draw_controller
                     .cache
                     .borrow()
@@ -753,7 +841,9 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
                                 left_margin + width_for_surface + gutter
                             }
                         }
-                        SplitViewMode::Vertical | SplitViewMode::Off => (f64::from(width) - width_for_surface) / 2.0,
+                        SplitViewMode::Vertical | SplitViewMode::Off => {
+                            (f64::from(width) - width_for_surface) / 2.0
+                        }
                     }
                 } else {
                     match layout_mode {
@@ -802,17 +892,25 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
                 if !state.search_highlights.is_empty() && page_index == state.page_index {
                     context.set_source_rgba(1.0, 0.9, 0.1, 0.45);
                     let page_height = state.page_height_points.max(1.0);
-                    let highlights = cairo_search_highlight_rects(page_height, state.scale, &state.search_highlights);
+                    let highlights = cairo_search_highlight_rects(
+                        page_height,
+                        state.scale,
+                        &state.search_highlights,
+                    );
                     for (left, top, right, bottom) in highlights {
                         context.rectangle(x + left, y + top, right - left, bottom - top);
-                            let _ = context.fill();
+                        let _ = context.fill();
                     }
                 }
             }
         } else {
             let has_document = draw_controller.state.borrow().path.is_some();
             context.set_source_rgb(0.82, 0.83, 0.85);
-            context.select_font_face("Sans", gtk4::cairo::FontSlant::Normal, gtk4::cairo::FontWeight::Normal);
+            context.select_font_face(
+                "Sans",
+                gtk4::cairo::FontSlant::Normal,
+                gtk4::cairo::FontWeight::Normal,
+            );
             context.set_font_size(16.0);
             context.move_to(24.0, 40.0);
             if has_document {
@@ -827,7 +925,8 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
     let input_controller = key_controller.clone();
     controller.area.add_controller(key_controller);
 
-    let scroll_controller = gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
+    let scroll_controller =
+        gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
     let scroll_zoom = controller.clone();
     scroll_controller.connect_scroll(move |scroll, delta_x, delta_y| {
         let _ = delta_x;
@@ -857,7 +956,8 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
                     state.page_index,
                 )
             };
-            if layout_mode != LayoutMode::Continuous || page_count <= 0 || page_height_points <= 0.0 {
+            if layout_mode != LayoutMode::Continuous || page_count <= 0 || page_height_points <= 0.0
+            {
                 return;
             }
 
@@ -883,7 +983,8 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
     input_controller.connect_key_pressed(move |_, keyval, _, state| {
         let key_name = keyval.name().unwrap_or_default();
         let settings = crate::session::load_app_settings();
-        let action = crate::keyboard::resolve_key_action_with_settings(&key_name, state.bits(), &settings);
+        let action =
+            crate::keyboard::resolve_key_action_with_settings(&key_name, state.bits(), &settings);
         if let Some(KeyAction::OpenFile) = action {
             show_open_dialog(
                 open_app.clone(),
@@ -924,12 +1025,16 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
     });
     let zoom_out_controller = controller.clone();
     zoom_out.connect_clicked(move |_| {
-        let step = crate::session::load_app_settings().zoom_step.clamp(0.05, 1.0);
+        let step = crate::session::load_app_settings()
+            .zoom_step
+            .clamp(0.05, 1.0);
         zoom_out_controller.change_zoom(-step);
     });
     let zoom_in_controller = controller.clone();
     zoom_in.connect_clicked(move |_| {
-        let step = crate::session::load_app_settings().zoom_step.clamp(0.05, 1.0);
+        let step = crate::session::load_app_settings()
+            .zoom_step
+            .clamp(0.05, 1.0);
         zoom_in_controller.change_zoom(step);
     });
     let search_controller = controller.clone();

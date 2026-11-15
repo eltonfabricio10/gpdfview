@@ -45,12 +45,18 @@ pub(crate) fn dispatch_ui_command(
             if let Some(path) = path {
                 let enabled = toggle_favorite_document(&path);
                 if enabled {
-                    controller.status.set_text("Documento adicionado aos favoritos.");
+                    controller
+                        .status
+                        .set_text("Documento adicionado aos favoritos.");
                 } else {
-                    controller.status.set_text("Documento removido dos favoritos.");
+                    controller
+                        .status
+                        .set_text("Documento removido dos favoritos.");
                 }
             } else {
-                controller.status.set_text("Abra um documento para favoritar.");
+                controller
+                    .status
+                    .set_text("Abra um documento para favoritar.");
             }
         }
         UiCommand::ShowAbout => {
@@ -73,16 +79,22 @@ pub(crate) fn dispatch_ui_command(
         }
         UiCommand::ToggleCurrentPageBookmark => {
             let Some(path) = controller.state.borrow().path.clone() else {
-                controller.status.set_text("Abra um documento antes de criar um marcador.");
+                controller
+                    .status
+                    .set_text("Abra um documento antes de criar um marcador.");
                 return;
             };
             let page_index = controller.state.borrow().page_index;
             let label = format!("Página {}", page_index + 1);
             let added = toggle_bookmark_page(&path, page_index, Some(&label));
             if added {
-                controller.status.set_text("Marcador da página atual adicionado.");
+                controller
+                    .status
+                    .set_text("Marcador da página atual adicionado.");
             } else {
-                controller.status.set_text("Marcador da página atual removido.");
+                controller
+                    .status
+                    .set_text("Marcador da página atual removido.");
             }
         }
         UiCommand::ToggleSplitViewHorizontal => {
@@ -122,8 +134,14 @@ pub(crate) fn dispatch_ui_command(
             if state.split_sync {
                 state.sync_split_view_to_primary();
             }
-            let mode_message = if state.split_sync { "sincronizado" } else { "desacoplado" };
-            controller.status.set_text(&format!("Divisao de visualizacao {mode_message}."));
+            let mode_message = if state.split_sync {
+                "sincronizado"
+            } else {
+                "desacoplado"
+            };
+            controller
+                .status
+                .set_text(&format!("Divisao de visualizacao {mode_message}."));
             drop(state);
             controller.area.queue_draw();
         }

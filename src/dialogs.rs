@@ -2,7 +2,7 @@ use gtk4 as gtk;
 use gtk4::prelude::*;
 
 use crate::app::ViewerController;
-use crate::session::{AppSettings, save_app_settings_for_home};
+use crate::session::{save_app_settings_for_home, AppSettings};
 
 pub(crate) fn build_document_properties_dialog(
     parent: &impl IsA<gtk::Window>,
@@ -151,7 +151,10 @@ pub(crate) fn build_settings_dialog(
         if let Ok(parsed) = zoom_entry_for_save.text().to_string().parse::<f64>() {
             next_settings.zoom_step = parsed.clamp(0.05, 1.0);
         }
-        for ((action, _), entry) in shortcut_actions.iter().zip(shortcut_entries_for_save.iter()) {
+        for ((action, _), entry) in shortcut_actions
+            .iter()
+            .zip(shortcut_entries_for_save.iter())
+        {
             let value = entry.text().to_string();
             if !value.trim().is_empty() {
                 next_settings.shortcuts.insert((*action).to_string(), value);

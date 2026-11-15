@@ -62,7 +62,9 @@ pub(crate) fn open_document_in_new_tab(
         title: title_label,
         print_button,
     });
-    tab_manager.borrow().add_tab_with_path(&new_controller.root, &filename, Some(path.clone()));
+    tab_manager
+        .borrow()
+        .add_tab_with_path(&new_controller.root, &filename, Some(path.clone()));
     tab_manager
         .borrow()
         .register_controller(&new_controller.root, new_controller.clone());
@@ -103,7 +105,9 @@ pub(crate) fn show_open_dialog(
             Ok(files) => {
                 let paths = selected_pdf_paths(&files);
                 if paths.is_empty() {
-                    controller.status.set_text("No PDF files were selected from the picker.");
+                    controller
+                        .status
+                        .set_text("No PDF files were selected from the picker.");
                     return;
                 }
                 for path in paths {

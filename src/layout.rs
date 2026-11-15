@@ -45,7 +45,8 @@ pub(crate) fn continuous_page_stride(page_height_points: f64, scale: f64) -> f64
 }
 
 pub(crate) fn continuous_page_top(page_index: i32, page_height_points: f64, scale: f64) -> f64 {
-    CONTINUOUS_TOP_MARGIN + f64::from(page_index.max(0)) * continuous_page_stride(page_height_points, scale)
+    CONTINUOUS_TOP_MARGIN
+        + f64::from(page_index.max(0)) * continuous_page_stride(page_height_points, scale)
 }
 
 pub(crate) fn continuous_content_height(page_height_px: i32, page_count: i32) -> i32 {

@@ -4,13 +4,15 @@ use gtk4::prelude::*;
 use crate::app::ViewerController;
 use crate::keyboard::KeyAction;
 use crate::layout::{
-    compute_fit_page_scale, compute_fit_width_scale, continuous_page_top,
-    CONTINUOUS_BOTTOM_MARGIN, CONTINUOUS_SIDE_MARGIN, CONTINUOUS_TOP_MARGIN,
+    compute_fit_page_scale, compute_fit_width_scale, continuous_page_top, CONTINUOUS_BOTTOM_MARGIN,
+    CONTINUOUS_SIDE_MARGIN, CONTINUOUS_TOP_MARGIN,
 };
 use crate::viewer_state::{apply_render_request, sanitize_scale};
 
 fn zoom_step_from_settings() -> f64 {
-    crate::session::load_app_settings().zoom_step.clamp(0.05, 1.0)
+    crate::session::load_app_settings()
+        .zoom_step
+        .clamp(0.05, 1.0)
 }
 
 pub(crate) fn scroll_zoom_step(delta_y: f64, state: ModifierType) -> f64 {
@@ -52,7 +54,9 @@ pub(crate) fn handle_key_action(controller: &ViewerController, action: KeyAction
         KeyAction::RotateLeft => rotate_page(controller, -90),
         KeyAction::RotateRight => rotate_page(controller, 90),
         KeyAction::OpenFile => {
-            controller.status.set_text("Open a PDF document using the toolbar button or menu action.");
+            controller
+                .status
+                .set_text("Open a PDF document using the toolbar button or menu action.");
         }
         KeyAction::FocusSearch => {
             controller.search_entry.grab_focus();
@@ -92,13 +96,8 @@ pub(crate) fn navigate_to(controller: &ViewerController, page_index: i32) {
         let current_scale = state.scale;
         let current_rotation = state.rotation;
         let target = page_index.clamp(0, state.page_count - 1);
-        let render_context = apply_render_request(
-            &mut state,
-            path,
-            target,
-            current_scale,
-            current_rotation,
-        );
+        let render_context =
+            apply_render_request(&mut state, path, target, current_scale, current_rotation);
         match render_context {
             Some((path, page_index, scale, rotation)) => (path, page_index, scale, rotation),
             None => return,
@@ -117,13 +116,8 @@ pub(crate) fn change_zoom(controller: &ViewerController, delta: f64) {
         let current_page = state.page_index;
         let current_rotation = state.rotation;
         let next_scale = sanitize_scale(state.scale + delta);
-        let render_context = apply_render_request(
-            &mut state,
-            path,
-            current_page,
-            next_scale,
-            current_rotation,
-        );
+        let render_context =
+            apply_render_request(&mut state, path, current_page, next_scale, current_rotation);
         match render_context {
             Some((path, page_index, scale, rotation)) => (path, page_index, scale, rotation),
             None => return,
@@ -178,17 +172,17 @@ pub(crate) fn fit_width(controller: &ViewerController) {
         let next_scale = compute_fit_width_scale(state.page_width_points, viewport_width);
         let layout_mode = state.layout_mode;
         let page_height_points = state.page_height_points;
-        let render_context = apply_render_request(
-            &mut state,
-            path,
-            current_page,
-            next_scale,
-            current_rotation,
-        );
+        let render_context =
+            apply_render_request(&mut state, path, current_page, next_scale, current_rotation);
         match render_context {
-            Some((path, page_index, scale, rotation)) => {
-                (path, page_index, scale, rotation, layout_mode, page_height_points)
-            }
+            Some((path, page_index, scale, rotation)) => (
+                path,
+                page_index,
+                scale,
+                rotation,
+                layout_mode,
+                page_height_points,
+            ),
             None => return,
         }
     };
@@ -215,25 +209,24 @@ pub(crate) fn fit_page(controller: &ViewerController) {
         let path = state.path.clone();
         let current_page = state.page_index;
         let current_rotation = state.rotation;
-        let (viewport_width, viewport_height) = if state.layout_mode
-            == crate::viewer_state::LayoutMode::Continuous
-        {
-            (
-                base_width
-                    .saturating_sub((CONTINUOUS_SIDE_MARGIN as i32) * 2)
-                    .saturating_sub(8)
-                    .max(1),
-                base_height
-                    .saturating_sub((CONTINUOUS_TOP_MARGIN + CONTINUOUS_BOTTOM_MARGIN) as i32)
-                    .saturating_sub(8)
-                    .max(1),
-            )
-        } else {
-            (
-                base_width.saturating_sub(32).max(1),
-                base_height.saturating_sub(56).max(1),
-            )
-        };
+        let (viewport_width, viewport_height) =
+            if state.layout_mode == crate::viewer_state::LayoutMode::Continuous {
+                (
+                    base_width
+                        .saturating_sub((CONTINUOUS_SIDE_MARGIN as i32) * 2)
+                        .saturating_sub(8)
+                        .max(1),
+                    base_height
+                        .saturating_sub((CONTINUOUS_TOP_MARGIN + CONTINUOUS_BOTTOM_MARGIN) as i32)
+                        .saturating_sub(8)
+                        .max(1),
+                )
+            } else {
+                (
+                    base_width.saturating_sub(32).max(1),
+                    base_height.saturating_sub(56).max(1),
+                )
+            };
         let next_scale = compute_fit_page_scale(
             state.page_width_points,
             state.page_height_points,
@@ -242,17 +235,17 @@ pub(crate) fn fit_page(controller: &ViewerController) {
         );
         let layout_mode = state.layout_mode;
         let page_height_points = state.page_height_points;
-        let render_context = apply_render_request(
-            &mut state,
-            path,
-            current_page,
-            next_scale,
-            current_rotation,
-        );
+        let render_context =
+            apply_render_request(&mut state, path, current_page, next_scale, current_rotation);
         match render_context {
-            Some((path, page_index, scale, rotation)) => {
-                (path, page_index, scale, rotation, layout_mode, page_height_points)
-            }
+            Some((path, page_index, scale, rotation)) => (
+                path,
+                page_index,
+                scale,
+                rotation,
+                layout_mode,
+                page_height_points,
+            ),
             None => return,
         }
     };

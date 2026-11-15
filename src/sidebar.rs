@@ -127,11 +127,13 @@ fn build_page_thumbnail_button(
         (state.path.clone(), state.rotation)
     };
     let scale = f64::from(THUMBNAIL_MAX_EDGE) / 1000.0;
-    let key = path.as_ref().map(|path| RenderKey::new(path.clone(), page_index, scale, rotation));
-    let thumbnail_state = Rc::new(RefCell::new(
-        key.as_ref()
-            .and_then(|key| thumbnail_surface_for_page(thumbnail_cache, key)),
-    ));
+    let key = path
+        .as_ref()
+        .map(|path| RenderKey::new(path.clone(), page_index, scale, rotation));
+    let thumbnail_state =
+        Rc::new(RefCell::new(key.as_ref().and_then(|key| {
+            thumbnail_surface_for_page(thumbnail_cache, key)
+        })));
     let preview = gtk4::DrawingArea::new();
     preview.set_content_width(THUMBNAIL_FRAME_WIDTH);
     preview.set_content_height(THUMBNAIL_FRAME_HEIGHT);
@@ -199,7 +201,12 @@ fn build_page_thumbnail_button(
                         let height = surface.height();
                         let stride = surface.stride();
                         let pixels = surface.data().map_err(|error| error.to_string())?.to_vec();
-                        Ok(ThumbnailPixels { width, height, stride, pixels })
+                        Ok(ThumbnailPixels {
+                            width,
+                            height,
+                            stride,
+                            pixels,
+                        })
                     });
                     let _ = sender.send(result);
                 })
@@ -216,9 +223,11 @@ fn build_page_thumbnail_button(
                                 pixels.height,
                                 pixels.stride,
                             ) {
-                                cache_for_result
-                                    .borrow_mut()
-                                    .insert(key.clone(), surface.clone(), bytes);
+                                cache_for_result.borrow_mut().insert(
+                                    key.clone(),
+                                    surface.clone(),
+                                    bytes,
+                                );
                                 *state_for_result.borrow_mut() = Some(surface);
                                 if let Some(preview) = preview_weak.upgrade() {
                                     preview.queue_draw();
@@ -321,10 +330,9 @@ fn populate_outline_list(
     if let Err(error) = thread::Builder::new()
         .name("gpdfview-outline".into())
         .spawn(move || {
-            let result = crate::engine::document_outline_cancellable(
-                &path_for_worker,
-                || generation_for_worker.load(Ordering::Relaxed) != request_id,
-            );
+            let result = crate::engine::document_outline_cancellable(&path_for_worker, || {
+                generation_for_worker.load(Ordering::Relaxed) != request_id
+            });
             let _ = sender.send(result);
         })
     {
@@ -619,7 +627,11 @@ pub fn build_sidebar(
     outline_list.set_selection_mode(gtk4::SelectionMode::None);
     outline_list.set_css_classes(&["boxed-list"]);
     let outline_generation = Arc::new(AtomicU64::new(0));
-    populate_outline_list(&outline_list, controller.clone(), outline_generation.clone());
+    populate_outline_list(
+        &outline_list,
+        controller.clone(),
+        outline_generation.clone(),
+    );
     let outline_manager = Rc::downgrade(&tab_manager);
     let outline_list_for_refresh = outline_list.clone();
     let outline_generation_for_refresh = outline_generation.clone();
@@ -802,11 +814,7 @@ pub fn build_sidebar(
                     return;
                 };
                 populate_pages_flow(&pages, &controller, &cache, &thumbnail_generation);
-                populate_outline_list(
-                    &outline,
-                    controller.clone(),
-                    outline_generation.clone(),
-                );
+                populate_outline_list(&outline, controller.clone(), outline_generation.clone());
                 populate_search_results_list(&search, &controller);
                 populate_app_bookmarks_list(&bookmarks, &controller);
             });
@@ -821,7 +829,10 @@ mod tests {
 
     #[test]
     fn page_range_for_sidebar_tracks_a_centered_window() {
-        assert_eq!(page_range_for_sidebar(12, 5), vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
+        assert_eq!(
+            page_range_for_sidebar(12, 5),
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9]
+        );
         assert_eq!(page_range_for_sidebar(5, 0), vec![0, 1, 2, 3, 4]);
         assert_eq!(page_range_for_sidebar(3, 2), vec![0, 1, 2]);
     }

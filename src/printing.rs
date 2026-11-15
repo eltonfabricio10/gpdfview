@@ -57,7 +57,10 @@ impl PrintService {
             .name("gpdfview-printer".into())
             .spawn(move || {
                 while let Ok(request) = request_rx.recv() {
-                    if response_tx.send(print_pdf(&request.path, &request.options)).is_err() {
+                    if response_tx
+                        .send(print_pdf(&request.path, &request.options))
+                        .is_err()
+                    {
                         return;
                     }
                 }
@@ -73,9 +76,9 @@ impl PrintService {
         self.requests
             .try_send(PrintRequest { path, options })
             .map_err(|error| match error {
-            TrySendError::Full(_) => "A print job is already running".to_string(),
-            TrySendError::Disconnected(_) => "The print worker is unavailable".to_string(),
-        })
+                TrySendError::Full(_) => "A print job is already running".to_string(),
+                TrySendError::Disconnected(_) => "The print worker is unavailable".to_string(),
+            })
     }
 
     pub fn try_recv(&self) -> Result<Result<PrintOutcome, String>, mpsc::TryRecvError> {
@@ -170,7 +173,11 @@ fn submit_to_cups(path: &Path, options: &PrintOptions) -> Result<String, String>
     }
 }
 
-fn render_for_printing(source: &Path, destination: &Path, options: &PrintOptions) -> Result<(), String> {
+fn render_for_printing(
+    source: &Path,
+    destination: &Path,
+    options: &PrintOptions,
+) -> Result<(), String> {
     let _guard = crate::poppler_lock::lock()?;
     let file = gio::File::for_path(source);
     let document = Document::from_file(&file.uri(), None).map_err(|error| error.to_string())?;
@@ -230,7 +237,7 @@ fn render_for_printing(source: &Path, destination: &Path, options: &PrintOptions
 
 #[cfg(test)]
 mod tests {
-    use super::{PrintOptions, TemporaryPdf, render_for_printing};
+    use super::{render_for_printing, PrintOptions, TemporaryPdf};
     use crate::poppler_lock;
     use cairo::{Context, PdfSurface};
     use gtk4::gio;
@@ -269,7 +276,7 @@ mod tests {
         let source = PdfFixture::create();
         let destination = TemporaryPdf::create();
 
-        render_for_printing(&source.0.0, &destination.0, &PrintOptions::default())
+        render_for_printing(&source.0 .0, &destination.0, &PrintOptions::default())
             .expect("render print fallback");
 
         let file = gio::File::for_path(&destination.0);

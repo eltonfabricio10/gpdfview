@@ -1,5 +1,5 @@
 /// Teste técnico mínimo para validar APIs de Poppler-glib
-/// 
+///
 /// Este programa valida:
 /// 1. Abertura de documento PDF via Poppler-glib
 /// 2. Consulta de informações básicas (página, título, tamanho)
@@ -14,10 +14,13 @@ fn main() -> Result<()> {
     // Test 1: Abrir documento
     let fixture = PathBuf::from("tests/fixtures/small.pdf");
     println!("Test 1: Abrindo documento {:?}...", fixture);
-    
+
     let uri = format!(
         "file://{}",
-        fixture.canonicalize().context("Arquivo não encontrado")?.to_string_lossy()
+        fixture
+            .canonicalize()
+            .context("Arquivo não encontrado")?
+            .to_string_lossy()
     );
     println!("  URI: {}", uri);
 

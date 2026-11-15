@@ -7,7 +7,7 @@ use std::collections::VecDeque;
 use std::ffi::CStr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex, mpsc};
+use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread;
 
 const RENDER_SCALE_LIMIT: f64 = 4.0;
@@ -130,13 +130,16 @@ where
         return Err("PDF page has invalid dimensions".into());
     }
 
-    let surface = ImageSurface::create(Format::ARgb32, width, height)
-        .map_err(|error| error.to_string())?;
+    let surface =
+        ImageSurface::create(Format::ARgb32, width, height).map_err(|error| error.to_string())?;
     let context = Context::new(&surface).map_err(|error| error.to_string())?;
     let angle = rotation as f64 * std::f64::consts::PI / 180.0;
     context.translate(width as f64 / 2.0, height as f64 / 2.0);
     context.rotate(angle);
-    context.translate(-page_width_points * scale / 2.0, -page_height_points * scale / 2.0);
+    context.translate(
+        -page_width_points * scale / 2.0,
+        -page_height_points * scale / 2.0,
+    );
     context.scale(scale, scale);
     page.render(&context);
     surface.flush();
@@ -183,7 +186,10 @@ unsafe fn outline_entry_from_iter(
     let title = if any.title.is_null() {
         "Section".to_string()
     } else {
-        let value = CStr::from_ptr(any.title).to_string_lossy().trim().to_string();
+        let value = CStr::from_ptr(any.title)
+            .to_string_lossy()
+            .trim()
+            .to_string();
         if value.is_empty() {
             "Section".to_string()
         } else {
@@ -562,7 +568,11 @@ pub fn document_properties(path: &PathBuf) -> Result<String, String> {
 
 fn normalize_rotation(rotation: i32) -> i32 {
     let normalized = rotation.rem_euclid(360);
-    if normalized == 360 { 0 } else { normalized }
+    if normalized == 360 {
+        0
+    } else {
+        normalized
+    }
 }
 
 fn rotated_page_dimensions(width_points: f64, height_points: f64, rotation: i32) -> (f64, f64) {
@@ -582,7 +592,8 @@ fn render_page(document: &Document, request: &RenderRequest) -> Result<RenderedP
         .page(request.page_index)
         .ok_or_else(|| format!("Page {} does not exist", request.page_index + 1))?;
     let (page_width_points, page_height_points) = page.size();
-    let (rotated_width, rotated_height) = rotated_page_dimensions(page_width_points, page_height_points, request.rotation);
+    let (rotated_width, rotated_height) =
+        rotated_page_dimensions(page_width_points, page_height_points, request.rotation);
     render_to_pixels(
         &page,
         request,
@@ -625,7 +636,10 @@ fn render_to_pixels(
     let angle = request.rotation as f64 * std::f64::consts::PI / 180.0;
     context.translate(width as f64 / 2.0, height as f64 / 2.0);
     context.rotate(angle);
-    context.translate(-page_width_points * scale / 2.0, -page_height_points * scale / 2.0);
+    context.translate(
+        -page_width_points * scale / 2.0,
+        -page_height_points * scale / 2.0,
+    );
     context.scale(scale, scale);
     page.render(&context);
     surface.flush();
@@ -775,8 +789,12 @@ mod tests {
     #[test]
     fn document_properties_include_page_count_even_without_metadata() {
         let fixture = PdfFixture::two_page();
-        let properties = super::document_properties(&fixture.0).expect("document metadata should be readable");
-        assert!(properties.contains("Pages: 2"), "expected page count in metadata output: {properties}");
+        let properties =
+            super::document_properties(&fixture.0).expect("document metadata should be readable");
+        assert!(
+            properties.contains("Pages: 2"),
+            "expected page count in metadata output: {properties}"
+        );
     }
 
     #[test]
@@ -908,7 +926,10 @@ mod tests {
                     return;
                 }
                 Ok(RenderResult::Error(error)) if error.generation == generation => {
-                    panic!("oversized render should have been downscaled: {}", error.message);
+                    panic!(
+                        "oversized render should have been downscaled: {}",
+                        error.message
+                    );
                 }
                 _ => thread::sleep(Duration::from_millis(10)),
             }

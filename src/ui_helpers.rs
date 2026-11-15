@@ -1,5 +1,5 @@
-use gtk4::prelude::*;
 use gtk4 as gtk;
+use gtk4::prelude::*;
 
 pub(crate) fn action_button(icon_name: &str, tooltip: &str) -> gtk::Button {
     let button = gtk::Button::from_icon_name(icon_name);

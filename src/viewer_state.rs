@@ -125,7 +125,11 @@ impl ViewerState {
 
 pub fn normalize_rotation(rotation: i32) -> i32 {
     let normalized = rotation.rem_euclid(360);
-    if normalized == 360 { 0 } else { normalized }
+    if normalized == 360 {
+        0
+    } else {
+        normalized
+    }
 }
 
 pub fn sanitize_scale(scale: f64) -> f64 {
@@ -166,7 +170,12 @@ pub fn apply_render_request(
     state.rotation = normalized_rotation;
     state.search_highlights.clear();
 
-    Some((path, normalized_page_index, normalized_scale, normalized_rotation))
+    Some((
+        path,
+        normalized_page_index,
+        normalized_scale,
+        normalized_rotation,
+    ))
 }
 
 #[cfg(test)]

@@ -81,7 +81,6 @@ impl<K: Eq + Hash + Clone, V> LruCache<K, V> {
             .map(|(key, entry)| (key.clone(), entry.value.clone()))
             .collect()
     }
-
 }
 
 #[cfg(test)]

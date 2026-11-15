@@ -7,26 +7,27 @@ use crate::navigation::{
     toggle_presentation_mode,
 };
 use crate::printing::{PrintOptions, PrintOrientation, PrintService};
-use crate::rendering::{poll, present_page, request_render, schedule_prefetch, search_current_page};
-use crate::session::{load_app_settings, load_document_view, remember_recent_document};
+use crate::rendering::{
+    poll, present_page, request_render, schedule_prefetch, search_current_page,
+};
 #[cfg(test)]
 use crate::session::{
     last_directory_for_home, last_window_geometry_for_home, newest_valid_recent_document,
-    normalize_recent_paths, remember_last_directory_for_home,
-    remember_window_geometry_for_home,
+    normalize_recent_paths, remember_last_directory_for_home, remember_window_geometry_for_home,
 };
+use crate::session::{load_app_settings, load_document_view, remember_recent_document};
 use crate::viewer_state::{RenderKey, ViewerState, DEFAULT_ZOOM};
 use crate::window::DocumentControllerParams;
-use libadwaita as adw;
 use adw::prelude::*;
+use gtk::gio;
 use gtk4 as gtk;
 use gtk4::cairo::ImageSurface;
-use gtk::gio;
+use libadwaita as adw;
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::AtomicU64;
-use std::sync::{Arc, mpsc};
+use std::sync::{mpsc, Arc};
 
 #[cfg(test)]
 use std::fs;
@@ -39,7 +40,6 @@ use crate::layout::{
 };
 #[cfg(test)]
 use crate::viewer_state::{apply_render_request, normalize_rotation};
-
 
 pub(crate) const CACHE_LIMIT_BYTES: usize = 128 * 1024 * 1024;
 
@@ -61,7 +61,11 @@ fn rotated_page_dimensions(width_points: f64, height_points: f64, rotation: i32)
     }
 }
 
-fn normalize_print_page_range(mode: &str, page_count: u32, current_page: u32) -> Option<(u32, u32)> {
+fn normalize_print_page_range(
+    mode: &str,
+    page_count: u32,
+    current_page: u32,
+) -> Option<(u32, u32)> {
     let total_pages = page_count.max(1);
     let current = current_page.clamp(1, total_pages);
     match mode {
@@ -220,7 +224,9 @@ impl ViewerController {
         generation: u64,
         rotation: i32,
     ) {
-        schedule_prefetch(self, path, page_index, page_count, scale, generation, rotation);
+        schedule_prefetch(
+            self, path, page_index, page_count, scale, generation, rotation,
+        );
     }
 
     pub(crate) fn show_status(&self, message: &str) {
@@ -267,7 +273,16 @@ impl ViewerController {
     }
 
     pub(crate) fn focus_global_search_result(&self, index: usize) {
-        let (target_page, target_rect, page_highlights, page_match_index, total, current_page, page_height_points, scale) = {
+        let (
+            target_page,
+            target_rect,
+            page_highlights,
+            page_match_index,
+            total,
+            current_page,
+            page_height_points,
+            scale,
+        ) = {
             let state = self.state.borrow();
             let total = state.search_results.len();
             if total == 0 {
@@ -329,7 +344,12 @@ impl ViewerController {
         self.notify_state_changed();
     }
 
-    pub(crate) fn scroll_to_search_match(&self, rect: (f64, f64, f64, f64), page_height_points: f64, scale: f64) {
+    pub(crate) fn scroll_to_search_match(
+        &self,
+        rect: (f64, f64, f64, f64),
+        page_height_points: f64,
+        scale: f64,
+    ) {
         let target = search_scroll_target(rect, page_height_points, scale);
         let adjustment = self.scrolled.vadjustment();
         let lower = adjustment.lower();
@@ -466,8 +486,9 @@ impl ViewerController {
             let custom_range = mode == "range";
             from_spin_for_updates.set_sensitive(custom_range);
             to_spin_for_updates.set_sensitive(custom_range);
-            let (from, to) = normalize_print_page_range(mode.as_str(), page_count as u32, current_page as u32)
-                .unwrap_or((1, page_count as u32));
+            let (from, to) =
+                normalize_print_page_range(mode.as_str(), page_count as u32, current_page as u32)
+                    .unwrap_or((1, page_count as u32));
             from_spin_for_updates.set_value(from as f64);
             to_spin_for_updates.set_value(to as f64);
         });
@@ -479,8 +500,9 @@ impl ViewerController {
             let custom_range = mode == "range";
             from_spin.set_sensitive(custom_range);
             to_spin.set_sensitive(custom_range);
-            let (from, to) = normalize_print_page_range(mode.as_str(), page_count as u32, current_page as u32)
-                .unwrap_or((1, page_count as u32));
+            let (from, to) =
+                normalize_print_page_range(mode.as_str(), page_count as u32, current_page as u32)
+                    .unwrap_or((1, page_count as u32));
             from_spin.set_value(from as f64);
             to_spin.set_value(to as f64);
         }
@@ -529,7 +551,6 @@ fn search_scroll_target(rect: (f64, f64, f64, f64), page_height_points: f64, sca
     (y_top_points * scale).max(0.0)
 }
 
-
 #[cfg(test)]
 #[allow(clippy::items_after_test_module)]
 mod tests {
@@ -539,14 +560,20 @@ mod tests {
     fn fit_page_scale_uses_the_tighter_dimension() {
         let scale = compute_fit_page_scale(612.0, 792.0, 800, 600);
         let expected = 600.0 / 792.0;
-        assert!((scale - expected).abs() < 0.0001, "scale should fit the page height to 600px: {scale}");
+        assert!(
+            (scale - expected).abs() < 0.0001,
+            "scale should fit the page height to 600px: {scale}"
+        );
     }
 
     #[test]
     fn fit_width_scale_uses_visible_width() {
         let scale = compute_fit_width_scale(612.0, 700);
         let expected = 700.0 / 612.0;
-        assert!((scale - expected).abs() < 0.0001, "scale should fit the page width to viewport: {scale}");
+        assert!(
+            (scale - expected).abs() < 0.0001,
+            "scale should fit the page width to viewport: {scale}"
+        );
     }
 
     #[test]
@@ -571,12 +598,21 @@ mod tests {
     #[test]
     fn key_shortcuts_map_to_navigation_and_zoom_actions() {
         assert_eq!(resolve_key_action("PageDown", 0), Some(KeyAction::NextPage));
-        assert_eq!(resolve_key_action("PageUp", 0), Some(KeyAction::PreviousPage));
+        assert_eq!(
+            resolve_key_action("PageUp", 0),
+            Some(KeyAction::PreviousPage)
+        );
         assert_eq!(resolve_key_action("plus", 0), Some(KeyAction::ZoomIn));
         assert_eq!(resolve_key_action("minus", 0), Some(KeyAction::ZoomOut));
         assert_eq!(resolve_key_action("f", 0), Some(KeyAction::FitWidth));
-        assert_eq!(resolve_key_action("F11", 0), Some(KeyAction::ToggleFullscreen));
-        assert_eq!(resolve_key_action("F5", 0), Some(KeyAction::TogglePresentation));
+        assert_eq!(
+            resolve_key_action("F11", 0),
+            Some(KeyAction::ToggleFullscreen)
+        );
+        assert_eq!(
+            resolve_key_action("F5", 0),
+            Some(KeyAction::TogglePresentation)
+        );
         assert_eq!(
             resolve_key_action("f", gtk::gdk::ModifierType::CONTROL_MASK.bits()),
             Some(KeyAction::FocusSearch)
@@ -706,9 +742,18 @@ mod tests {
     fn ctrl_scroll_zoom_steps_in_the_expected_direction() {
         use gtk4::gdk::ModifierType;
 
-        assert_eq!(crate::navigation::scroll_zoom_step(-1.0, ModifierType::CONTROL_MASK), 0.1);
-        assert_eq!(crate::navigation::scroll_zoom_step(1.0, ModifierType::CONTROL_MASK), -0.1);
-        assert_eq!(crate::navigation::scroll_zoom_step(-1.0, ModifierType::SHIFT_MASK), 0.0);
+        assert_eq!(
+            crate::navigation::scroll_zoom_step(-1.0, ModifierType::CONTROL_MASK),
+            0.1
+        );
+        assert_eq!(
+            crate::navigation::scroll_zoom_step(1.0, ModifierType::CONTROL_MASK),
+            -0.1
+        );
+        assert_eq!(
+            crate::navigation::scroll_zoom_step(-1.0, ModifierType::SHIFT_MASK),
+            0.0
+        );
     }
 
     #[test]
@@ -772,7 +817,9 @@ pub fn run() {
             return;
         };
         let Some(tab_manager) = controller.tab_manager.upgrade() else {
-            controller.status.set_text("The document tab manager is unavailable.");
+            controller
+                .status
+                .set_text("The document tab manager is unavailable.");
             return;
         };
 
@@ -806,8 +853,12 @@ pub fn run() {
 }
 
 pub(crate) fn new_worker_pair() -> Result<(Rc<PdfRenderer>, Rc<PrintService>), String> {
-    let renderer = PdfRenderer::new().map(Rc::new).map_err(|error| format!("Could not start PDF renderer: {error}"))?;
-    let printer = PrintService::new().map(Rc::new).map_err(|error| format!("Could not start print worker: {error}"))?;
+    let renderer = PdfRenderer::new()
+        .map(Rc::new)
+        .map_err(|error| format!("Could not start PDF renderer: {error}"))?;
+    let printer = PrintService::new()
+        .map(Rc::new)
+        .map_err(|error| format!("Could not start print worker: {error}"))?;
     Ok((renderer, printer))
 }
 
@@ -833,4 +884,3 @@ fn selected_pdf_paths_from_store(store: &gio::ListStore) -> Vec<PathBuf> {
     }
     selected
 }
-

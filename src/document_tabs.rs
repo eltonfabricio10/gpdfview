@@ -73,9 +73,8 @@ fn remove_page(
 impl DocumentTabManager {
     pub fn new(notebook: gtk4::Notebook) -> Self {
         let controllers = Rc::new(RefCell::new(HashMap::new()));
-        let active_controller_hooks = Rc::new(RefCell::new(Vec::<Rc<
-            dyn Fn(Rc<ViewerController>),
-        >>::new()));
+        let active_controller_hooks =
+            Rc::new(RefCell::new(Vec::<Rc<dyn Fn(Rc<ViewerController>)>>::new()));
         let weak_controllers: Weak<RefCell<HashMap<usize, Rc<ViewerController>>>> =
             Rc::downgrade(&controllers);
         let weak_hooks = Rc::downgrade(&active_controller_hooks);
@@ -224,8 +223,7 @@ impl DocumentTabManager {
         let controllers = Rc::clone(&self.controllers);
         let recently_closed = Rc::clone(&self.recently_closed);
         close_button.connect_clicked(move |_| {
-            let (Some(notebook), Some(page)) =
-                (weak_notebook.upgrade(), weak_page.upgrade())
+            let (Some(notebook), Some(page)) = (weak_notebook.upgrade(), weak_page.upgrade())
             else {
                 return;
             };
@@ -362,7 +360,10 @@ mod tests {
 
         assert_eq!(manager.close_last_recorded_tab(), Some("Empty".to_string()));
         // Add Alpha to the closed stack after Empty, mirroring two independent closes.
-        manager.recently_closed.borrow_mut().push(manager.model_tabs.borrow_mut().remove(0));
+        manager
+            .recently_closed
+            .borrow_mut()
+            .push(manager.model_tabs.borrow_mut().remove(0));
 
         assert_eq!(manager.restore_last_closed_path(), Some(path));
         assert_eq!(manager.recent_closed_count(), 1);

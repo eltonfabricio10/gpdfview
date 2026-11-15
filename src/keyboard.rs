@@ -69,9 +69,7 @@ fn shortcut_matches(value: &str, key: &str, modifiers: u32) -> bool {
 
 pub(crate) fn resolve_key_action(key: &str, modifiers: u32) -> Option<KeyAction> {
     let normalized = key.trim();
-    let lowered = normalized
-        .to_ascii_lowercase()
-        .replace(['_', '-'], "");
+    let lowered = normalized.to_ascii_lowercase().replace(['_', '-'], "");
     let has_ctrl = modifiers & gtk::gdk::ModifierType::CONTROL_MASK.bits() != 0;
 
     if has_ctrl && lowered == "o" {

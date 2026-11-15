@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
-use std::time::Instant;
 use std::thread;
+use std::time::Instant;
 
 use gtk4::cairo::{Format, ImageSurface};
 use gtk4::prelude::*;
@@ -9,8 +9,8 @@ use gtk4::prelude::*;
 use crate::app::ViewerController;
 use crate::engine::{RenderResult, RenderedPage};
 use crate::layout::continuous_content_height;
-use crate::viewer_state::apply_render_request;
 use crate::session::remember_document_view;
+use crate::viewer_state::apply_render_request;
 use crate::viewer_state::LayoutMode;
 
 pub(crate) fn request_render(
@@ -61,7 +61,9 @@ pub(crate) fn request_render(
         return;
     }
 
-    let generation = controller.renderer.request(path.clone(), page_index, scale, rotation);
+    let generation = controller
+        .renderer
+        .request(path.clone(), page_index, scale, rotation);
     {
         let mut state = controller.state.borrow_mut();
         state.generation = generation;
@@ -87,7 +89,12 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
             return;
         }
     }
-    let key = crate::viewer_state::RenderKey::new(page.path.clone(), page.page_index, page.scale, page.rotation);
+    let key = crate::viewer_state::RenderKey::new(
+        page.path.clone(),
+        page.page_index,
+        page.scale,
+        page.rotation,
+    );
     let render_time = if page.prefetch {
         None
     } else {
@@ -144,8 +151,12 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
             controller.area.set_content_width(width);
             controller.area.set_content_height(height);
         } else {
-            controller.area.set_content_width(page.width.saturating_add(32));
-            controller.area.set_content_height(page.height.saturating_add(32));
+            controller
+                .area
+                .set_content_width(page.width.saturating_add(32));
+            controller
+                .area
+                .set_content_height(page.height.saturating_add(32));
         }
     }
     controller.area.queue_draw();
@@ -154,7 +165,9 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
         .set_range(1.0, f64::from(page.page_count.max(1)));
     controller.set_page_spin_value(f64::from(page.page_index + 1));
     controller.page_spin.set_sensitive(page.page_count > 0);
-    controller.page_total.set_text(&format!("/ {}", page.page_count));
+    controller
+        .page_total
+        .set_text(&format!("/ {}", page.page_count));
     controller
         .zoom_label
         .set_text(&format!("{:.0}%", controller.state.borrow().scale * 100.0));
@@ -181,7 +194,14 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
             state.layout_mode.as_str(),
         );
         drop(state);
-        controller.schedule_prefetch(path, page.page_index, page.page_count, scale, generation, rotation);
+        controller.schedule_prefetch(
+            path,
+            page.page_index,
+            page.page_count,
+            scale,
+            generation,
+            rotation,
+        );
     }
 
     if let Some(rect) = pending_scroll {
@@ -206,7 +226,9 @@ pub(crate) fn schedule_prefetch(
     if page_index + 1 < page_count {
         pages.push(page_index + 1);
     }
-    controller.renderer.prefetch(path, &pages, scale, generation, rotation);
+    controller
+        .renderer
+        .prefetch(path, &pages, scale, generation, rotation);
 }
 
 pub(crate) fn poll(controller: &ViewerController) {
@@ -220,14 +242,22 @@ pub(crate) fn poll(controller: &ViewerController) {
         controller.print_button.set_sensitive(true);
         match result {
             Ok(outcome) => controller.status.set_text(&outcome.message),
-            Err(error) => controller.status.set_text(&format!("Print failed: {error}")),
+            Err(error) => controller
+                .status
+                .set_text(&format!("Print failed: {error}")),
         }
     }
-    let search_responses = controller.search_receiver.borrow().try_iter().collect::<Vec<_>>();
+    let search_responses = controller
+        .search_receiver
+        .borrow()
+        .try_iter()
+        .collect::<Vec<_>>();
     for response in search_responses {
         let current_generation = controller.search_generation.load(Ordering::Relaxed);
         let current_path = controller.state.borrow().path.clone();
-        if response.generation != current_generation || current_path.as_ref() != Some(&response.path) {
+        if response.generation != current_generation
+            || current_path.as_ref() != Some(&response.path)
+        {
             continue;
         }
         complete_document_search(controller, response);
@@ -238,12 +268,16 @@ pub(crate) fn search_current_page(controller: &ViewerController) {
     let generation = controller.search_generation.fetch_add(1, Ordering::Relaxed) + 1;
     let state = controller.state.borrow();
     let Some(path) = state.path.clone() else {
-        controller.status.set_text("Open a PDF document before searching.");
+        controller
+            .status
+            .set_text("Open a PDF document before searching.");
         return;
     };
     let query = controller.search_entry.text().trim().to_string();
     if query.is_empty() {
-        controller.status.set_text("Type a word or phrase to search in the PDF.");
+        controller
+            .status
+            .set_text("Type a word or phrase to search in the PDF.");
         return;
     }
     let page_index = state.page_index;
@@ -266,11 +300,10 @@ pub(crate) fn search_current_page(controller: &ViewerController) {
     if let Err(error) = thread::Builder::new()
         .name("gpdfview-search".into())
         .spawn(move || {
-            let result = crate::engine::find_text_rectangles_in_document_cancellable(
-                &path,
-                &query,
-                || cancellation_generation.load(Ordering::Relaxed) != generation,
-            );
+            let result =
+                crate::engine::find_text_rectangles_in_document_cancellable(&path, &query, || {
+                    cancellation_generation.load(Ordering::Relaxed) != generation
+                });
             let _ = sender.send(crate::app::SearchResponse {
                 generation,
                 path,
@@ -280,7 +313,9 @@ pub(crate) fn search_current_page(controller: &ViewerController) {
             });
         })
     {
-        controller.status.set_text(&format!("Could not start search: {error}"));
+        controller
+            .status
+            .set_text(&format!("Could not start search: {error}"));
     }
 }
 
@@ -328,7 +363,9 @@ fn complete_document_search(controller: &ViewerController, response: crate::app:
             state.search_query.clear();
             state.pending_search_rect = None;
             controller.area.queue_draw();
-            controller.status.set_text(&format!("Search failed: {error}"));
+            controller
+                .status
+                .set_text(&format!("Search failed: {error}"));
             controller.notify_state_changed();
         }
     }

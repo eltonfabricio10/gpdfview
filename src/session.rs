@@ -1,6 +1,6 @@
+use std::collections::HashMap;
 use std::env;
 use std::fs;
-use std::collections::HashMap;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -16,11 +16,7 @@ fn persist_session_file(path: &Path, contents: &[u8]) {
             .file_name()
             .and_then(|name| name.to_str())
             .unwrap_or("session");
-        let temporary = parent.join(format!(
-            ".{filename}.{}.{}.tmp",
-            std::process::id(),
-            id
-        ));
+        let temporary = parent.join(format!(".{filename}.{}.{}.tmp", std::process::id(), id));
         let mut file = fs::OpenOptions::new()
             .write(true)
             .create_new(true)
@@ -133,7 +129,9 @@ pub fn load_app_settings_for_home(home: &Path) -> AppSettings {
             _ if key.starts_with("shortcut:") => {
                 let action = key.trim_start_matches("shortcut:");
                 if !action.is_empty() {
-                    settings.shortcuts.insert(action.to_string(), value.to_string());
+                    settings
+                        .shortcuts
+                        .insert(action.to_string(), value.to_string());
                 }
             }
             _ => {}
@@ -250,11 +248,16 @@ pub fn last_window_state_for_home(home: &Path) -> Option<(bool, bool)> {
         let value = parts.next()?.trim();
         match key {
             "maximized" => is_maximized = Some(value == "1" || value.eq_ignore_ascii_case("true")),
-            "fullscreen" => is_fullscreen = Some(value == "1" || value.eq_ignore_ascii_case("true")),
+            "fullscreen" => {
+                is_fullscreen = Some(value == "1" || value.eq_ignore_ascii_case("true"))
+            }
             _ => {}
         }
     }
-    Some((is_maximized.unwrap_or(false), is_fullscreen.unwrap_or(false)))
+    Some((
+        is_maximized.unwrap_or(false),
+        is_fullscreen.unwrap_or(false),
+    ))
 }
 
 pub fn remember_last_directory_for_home(home: &Path, dir: &Path) {
@@ -376,7 +379,9 @@ pub fn load_favorite_documents() -> Vec<PathBuf> {
 }
 
 pub fn is_favorite_document(path: &Path) -> bool {
-    load_favorite_documents().iter().any(|favorite| favorite == path)
+    load_favorite_documents()
+        .iter()
+        .any(|favorite| favorite == path)
 }
 
 fn bookmarks_file_for_home(home: &Path) -> PathBuf {
@@ -449,11 +454,17 @@ pub fn toggle_bookmark_page(path: &Path, page_index: i32, label: Option<&str>) -
     toggle_bookmark_for_home(Path::new(&home), path, page_index, label)
 }
 
-pub fn toggle_bookmark_for_home(home: &Path, document_path: &Path, page_index: i32, label: Option<&str>) -> bool {
+pub fn toggle_bookmark_for_home(
+    home: &Path,
+    document_path: &Path,
+    page_index: i32,
+    label: Option<&str>,
+) -> bool {
     let canonical_path = normalize_bookmark_path(document_path);
     let bookmarks = load_all_app_bookmarks_for_home(home);
     let existing = bookmarks.iter().any(|bookmark| {
-        normalize_bookmark_path(&bookmark.path) == canonical_path && bookmark.page_index == page_index
+        normalize_bookmark_path(&bookmark.path) == canonical_path
+            && bookmark.page_index == page_index
     });
 
     if existing {
@@ -489,7 +500,8 @@ pub fn remove_bookmark_page(path: &Path, page_index: i32) -> bool {
     let mut bookmarks = load_all_app_bookmarks_for_home(Path::new(&home));
     let original_len = bookmarks.len();
     bookmarks.retain(|bookmark| {
-        normalize_bookmark_path(&bookmark.path) != canonical_path || bookmark.page_index != page_index
+        normalize_bookmark_path(&bookmark.path) != canonical_path
+            || bookmark.page_index != page_index
     });
     write_app_bookmarks(Path::new(&home), &bookmarks);
     original_len != bookmarks.len()
@@ -692,7 +704,10 @@ mod tests {
         let restored = load_app_settings_for_home(&home);
         assert_eq!(restored.default_layout, "continuous");
         assert!(restored.split_sync);
-        assert_eq!(restored.shortcuts.get("open_file").map(String::as_str), Some("Ctrl+O"));
+        assert_eq!(
+            restored.shortcuts.get("open_file").map(String::as_str),
+            Some("Ctrl+O")
+        );
 
         let _ = fs::remove_dir_all(&base);
     }
