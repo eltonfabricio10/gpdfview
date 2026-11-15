@@ -494,6 +494,8 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
     root.append(&status);
 
     let controller = Rc::new(ViewerController {
+        app: app.clone(),
+        tab_manager: tab_manager.clone(),
         renderer: renderer.clone(),
         printer: printer.clone(),
         state: Rc::new(RefCell::new(ViewerState {

@@ -64,6 +64,8 @@ fn normalize_print_page_range(mode: &str, page_count: u32, current_page: u32) ->
 
 #[derive(Clone)]
 pub(crate) struct ViewerController {
+    pub(crate) app: adw::Application,
+    pub(crate) tab_manager: Rc<RefCell<crate::document_tabs::DocumentTabManager>>,
     pub(crate) renderer: Rc<PdfRenderer>,
     pub(crate) printer: Rc<PrintService>,
     pub(crate) state: Rc<RefCell<ViewerState>>,
@@ -746,25 +748,39 @@ pub fn run() {
     });
 
     app.connect_open(move |app, files, _hint| {
-        let current = controller_slot.borrow().clone();
-        if current.is_none() {
+        if controller_slot.borrow().is_none() {
             if let Some(controller) = build_ui(app) {
                 *controller_slot.borrow_mut() = Some(controller);
             }
         }
-        let Some(file) = files.first() else {
+        let Some(controller) = controller_slot.borrow().clone() else {
             return;
         };
-        let Some(path) = file.path() else {
-            if let Some(controller) = controller_slot.borrow().as_ref() {
+
+        for file in files {
+            let Some(path) = file.path() else {
                 controller
                     .status
-                    .set_text("Only local PDF files are supported in this prototype.");
+                    .set_text("Only local PDF files are supported.");
+                continue;
+            };
+            if !path
+                .extension()
+                .and_then(|extension| extension.to_str())
+                .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
+            {
+                controller.status.set_text("Only PDF files are supported.");
+                continue;
             }
-            return;
-        };
-        if let Some(controller) = controller_slot.borrow().as_ref() {
-            controller.open_document(path);
+
+            crate::document_actions::open_document_in_new_tab(
+                &controller.app,
+                &controller.window,
+                controller.tab_manager.clone(),
+                path,
+                controller.title.clone(),
+                controller.print_button.clone(),
+            );
         }
     });
     app.run();
