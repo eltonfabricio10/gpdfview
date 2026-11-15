@@ -3,6 +3,9 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
+use std::rc::Weak;
+
+use crate::app::ViewerController;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct TabMetadata {
@@ -16,6 +19,8 @@ pub struct DocumentTabManager {
     // Metadata is keyed by the stable GTK page identity, not by notebook index.
     // Notebook pages can be reordered without changing the identity of the page.
     tabs: Rc<RefCell<HashMap<usize, TabMetadata>>>,
+    controllers: Rc<RefCell<HashMap<usize, Rc<ViewerController>>>>,
+    active_controller_hooks: Rc<RefCell<Vec<Rc<dyn Fn(Rc<ViewerController>)>>>>,
     recently_closed: Rc<RefCell<Vec<TabMetadata>>>,
     #[cfg(test)]
     model_tabs: Rc<RefCell<Vec<TabMetadata>>>,
@@ -23,6 +28,20 @@ pub struct DocumentTabManager {
 
 pub fn should_show_tabs(page_count: u32) -> bool {
     page_count > 0
+}
+
+fn update_active_header(controller: &ViewerController) {
+    let path = controller.state.borrow().path.clone();
+    controller.print_button.set_sensitive(path.is_some());
+    if let Some(path) = path {
+        let title = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("PDF document");
+        controller.title.set_text(title);
+    } else {
+        controller.title.set_text("gpdfview");
+    }
 }
 
 fn page_key(page: &gtk4::Box) -> usize {
@@ -33,6 +52,7 @@ fn remove_page(
     notebook: &gtk4::Notebook,
     page: &gtk4::Widget,
     tabs: &Rc<RefCell<HashMap<usize, TabMetadata>>>,
+    controllers: &Rc<RefCell<HashMap<usize, Rc<ViewerController>>>>,
     recently_closed: &Rc<RefCell<Vec<TabMetadata>>>,
 ) -> bool {
     let Some(page_index) = notebook.page_num(page) else {
@@ -43,6 +63,7 @@ fn remove_page(
     if let Some(metadata) = tabs.borrow_mut().remove(&key) {
         recently_closed.borrow_mut().push(metadata);
     }
+    controllers.borrow_mut().remove(&key);
 
     notebook.remove_page(Some(page_index));
     notebook.set_show_tabs(should_show_tabs(notebook.n_pages()));
@@ -51,9 +72,32 @@ fn remove_page(
 
 impl DocumentTabManager {
     pub fn new(notebook: gtk4::Notebook) -> Self {
+        let controllers = Rc::new(RefCell::new(HashMap::new()));
+        let active_controller_hooks = Rc::new(RefCell::new(Vec::<Rc<
+            dyn Fn(Rc<ViewerController>),
+        >>::new()));
+        let weak_controllers: Weak<RefCell<HashMap<usize, Rc<ViewerController>>>> =
+            Rc::downgrade(&controllers);
+        let weak_hooks = Rc::downgrade(&active_controller_hooks);
+        notebook.connect_switch_page(move |_, page, _| {
+            let Some(controllers) = weak_controllers.upgrade() else {
+                return;
+            };
+            let controller = controllers.borrow().get(&(page.as_ptr() as usize)).cloned();
+            if let Some(controller) = controller {
+                update_active_header(&controller);
+                if let Some(hooks) = weak_hooks.upgrade() {
+                    for hook in hooks.borrow().iter() {
+                        hook(controller.clone());
+                    }
+                }
+            }
+        });
         Self {
             notebook: Some(notebook),
             tabs: Rc::new(RefCell::new(HashMap::new())),
+            controllers,
+            active_controller_hooks,
             recently_closed: Rc::new(RefCell::new(Vec::new())),
             #[cfg(test)]
             model_tabs: Rc::new(RefCell::new(Vec::new())),
@@ -65,6 +109,8 @@ impl DocumentTabManager {
         Self {
             notebook: None,
             tabs: Rc::new(RefCell::new(HashMap::new())),
+            controllers: Rc::new(RefCell::new(HashMap::new())),
+            active_controller_hooks: Rc::new(RefCell::new(Vec::new())),
             recently_closed: Rc::new(RefCell::new(Vec::new())),
             model_tabs: Rc::new(RefCell::new(Vec::new())),
         }
@@ -123,6 +169,7 @@ impl DocumentTabManager {
             notebook,
             page.upcast_ref(),
             &self.tabs,
+            &self.controllers,
             &self.recently_closed,
         )
     }
@@ -174,6 +221,7 @@ impl DocumentTabManager {
         let weak_notebook = notebook.downgrade();
         let weak_page = page.downgrade();
         let tabs = Rc::clone(&self.tabs);
+        let controllers = Rc::clone(&self.controllers);
         let recently_closed = Rc::clone(&self.recently_closed);
         close_button.connect_clicked(move |_| {
             let (Some(notebook), Some(page)) =
@@ -181,13 +229,24 @@ impl DocumentTabManager {
             else {
                 return;
             };
-            let _ = remove_page(&notebook, page.upcast_ref(), &tabs, &recently_closed);
+            let _ = remove_page(
+                &notebook,
+                page.upcast_ref(),
+                &tabs,
+                &controllers,
+                &recently_closed,
+            );
         });
         label_box.append(&close_button);
 
         notebook.append_page(page, Some(&label_box));
         notebook.set_tab_reorderable(page, true);
         notebook.set_current_page(notebook.page_num(page));
+        if let Some(controller) = self.controllers.borrow().get(&page_key(page)).cloned() {
+            for hook in self.active_controller_hooks.borrow().iter() {
+                hook(controller.clone());
+            }
+        }
         notebook.set_show_tabs(should_show_tabs(notebook.n_pages()));
     }
 
@@ -196,6 +255,44 @@ impl DocumentTabManager {
             .borrow()
             .values()
             .any(|metadata| metadata.path.is_some())
+    }
+
+    pub fn register_controller(&self, page: &gtk4::Box, controller: Rc<ViewerController>) {
+        self.controllers
+            .borrow_mut()
+            .insert(page_key(page), controller.clone());
+        let is_current = self.notebook.as_ref().is_some_and(|notebook| {
+            notebook
+                .current_page()
+                .and_then(|index| notebook.nth_page(Some(index)))
+                .is_some_and(|current| current.as_ptr() as usize == page.as_ptr() as usize)
+        });
+        if is_current {
+            update_active_header(&controller);
+            for hook in self.active_controller_hooks.borrow().iter() {
+                hook(controller.clone());
+            }
+        }
+    }
+
+    pub fn subscribe_active_controller<F>(&self, hook: F)
+    where
+        F: Fn(Rc<ViewerController>) + 'static,
+    {
+        let hook: Rc<dyn Fn(Rc<ViewerController>)> = Rc::new(hook);
+        self.active_controller_hooks.borrow_mut().push(hook.clone());
+        if let Some(controller) = self.active_controller() {
+            hook(controller);
+        }
+    }
+
+    pub fn active_controller(&self) -> Option<Rc<ViewerController>> {
+        let notebook = self.notebook.as_ref()?;
+        let page = notebook.nth_page(Some(notebook.current_page()?))?;
+        self.controllers
+            .borrow()
+            .get(&(page.as_ptr() as usize))
+            .cloned()
     }
 
     #[cfg(test)]

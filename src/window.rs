@@ -77,6 +77,16 @@ fn append_menu_separator(menu_box: &gtk::Box) {
     menu_box.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
 }
 
+fn active_controller(
+    tab_manager: &Rc<RefCell<DocumentTabManager>>,
+    fallback: &Rc<ViewerController>,
+) -> Rc<ViewerController> {
+    tab_manager
+        .borrow()
+        .active_controller()
+        .unwrap_or_else(|| fallback.clone())
+}
+
 pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     let (renderer, printer) = match crate::app::new_worker_pair() {
         Ok(pair) => pair,
@@ -167,6 +177,13 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         title: title.clone(),
         print_button: print_button.clone(),
     });
+    {
+        let print_manager = tab_manager.clone();
+        let fallback = initial.clone();
+        print_button.connect_clicked(move |_| {
+            active_controller(&print_manager, &fallback).submit_print();
+        });
+    }
 
     if should_resume_last_document() {
         if let Some(path) = newest_valid_recent_document(&load_recent_documents()) {
@@ -176,6 +193,9 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
                 .unwrap_or("Documento")
                 .to_string();
             tab_manager.borrow().add_tab_with_path(&initial.root, &title_text, Some(path.clone()));
+            tab_manager
+                .borrow()
+                .register_controller(&initial.root, initial.clone());
             initial.open_document(path);
         }
     }
@@ -224,13 +244,19 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
             menu_last_directory.clone(),
         );
     });
-    let menu_print_controller = initial.clone();
+    let menu_print_manager = tab_manager.clone();
+    let menu_print_fallback = initial.clone();
     let file_print_item = append_menu_item(&file_menu_box, "Imprimir", move || {
-        menu_print_controller.submit_print();
+        active_controller(&menu_print_manager, &menu_print_fallback).submit_print();
     });
-    let menu_props_controller = initial.clone();
+    let menu_props_manager = tab_manager.clone();
+    let menu_props_fallback = initial.clone();
     let file_properties_item = append_menu_item(&file_menu_box, "Propriedades", move || {
-        dispatch_ui_command(&menu_props_controller, UiCommand::ShowDocumentProperties, None);
+        dispatch_ui_command(
+            &active_controller(&menu_props_manager, &menu_props_fallback),
+            UiCommand::ShowDocumentProperties,
+            None,
+        );
     });
     append_menu_separator(&file_menu_box);
     let menu_about_from_file = initial.clone();
@@ -238,17 +264,24 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         dispatch_ui_command(&menu_about_from_file, UiCommand::ShowAbout, None);
     });
 
-    let menu_search_controller = initial.clone();
+    let menu_search_manager = tab_manager.clone();
+    let menu_search_fallback = initial.clone();
     let edit_focus_item = append_menu_item(&edit_menu_box, "Focar busca", move || {
-        dispatch_ui_command(&menu_search_controller, UiCommand::FocusSearch, None);
+        dispatch_ui_command(
+            &active_controller(&menu_search_manager, &menu_search_fallback),
+            UiCommand::FocusSearch,
+            None,
+        );
     });
-    let edit_next_controller = initial.clone();
+    let edit_next_manager = tab_manager.clone();
+    let edit_next_fallback = initial.clone();
     let edit_next_match_item = append_menu_item(&edit_menu_box, "Proximo resultado", move || {
-        edit_next_controller.search_next_match();
+        active_controller(&edit_next_manager, &edit_next_fallback).search_next_match();
     });
-    let edit_prev_controller = initial.clone();
+    let edit_prev_manager = tab_manager.clone();
+    let edit_prev_fallback = initial.clone();
     let edit_prev_match_item = append_menu_item(&edit_menu_box, "Resultado anterior", move || {
-        edit_prev_controller.search_previous_match();
+        active_controller(&edit_prev_manager, &edit_prev_fallback).search_previous_match();
     });
 
     let menu_sidebar = sidebar.clone();
@@ -256,29 +289,43 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     let view_sidebar_item = append_menu_item(&view_menu_box, "Alternar painel lateral", move || {
         dispatch_ui_command(&menu_sidebar_controller, UiCommand::ToggleSidebar, Some(&menu_sidebar));
     });
-    let view_fullscreen_controller = initial.clone();
+    let view_fullscreen_manager = tab_manager.clone();
+    let view_fullscreen_fallback = initial.clone();
     let view_fullscreen_item = append_menu_item(&view_menu_box, "Tela cheia", move || {
-        dispatch_ui_command(&view_fullscreen_controller, UiCommand::ToggleFullscreen, None);
+        dispatch_ui_command(
+            &active_controller(&view_fullscreen_manager, &view_fullscreen_fallback),
+            UiCommand::ToggleFullscreen,
+            None,
+        );
     });
-    let view_presentation_controller = initial.clone();
+    let view_presentation_manager = tab_manager.clone();
+    let view_presentation_fallback = initial.clone();
     let view_presentation_item = append_menu_item(&view_menu_box, "Modo apresentacao", move || {
-        dispatch_ui_command(&view_presentation_controller, UiCommand::TogglePresentation, None);
+        dispatch_ui_command(
+            &active_controller(&view_presentation_manager, &view_presentation_fallback),
+            UiCommand::TogglePresentation,
+            None,
+        );
     });
-    let view_split_horizontal_controller = initial.clone();
+    let view_split_horizontal_manager = tab_manager.clone();
+    let view_split_horizontal_fallback = initial.clone();
     let view_split_horizontal_item = append_menu_item(&view_menu_box, "Dividir horizontalmente", move || {
-        dispatch_ui_command(&view_split_horizontal_controller, UiCommand::ToggleSplitViewHorizontal, None);
+        dispatch_ui_command(&active_controller(&view_split_horizontal_manager, &view_split_horizontal_fallback), UiCommand::ToggleSplitViewHorizontal, None);
     });
-    let view_split_vertical_controller = initial.clone();
+    let view_split_vertical_manager = tab_manager.clone();
+    let view_split_vertical_fallback = initial.clone();
     let view_split_vertical_item = append_menu_item(&view_menu_box, "Dividir verticalmente", move || {
-        dispatch_ui_command(&view_split_vertical_controller, UiCommand::ToggleSplitViewVertical, None);
+        dispatch_ui_command(&active_controller(&view_split_vertical_manager, &view_split_vertical_fallback), UiCommand::ToggleSplitViewVertical, None);
     });
-    let view_close_split_controller = initial.clone();
+    let view_close_split_manager = tab_manager.clone();
+    let view_close_split_fallback = initial.clone();
     let view_close_split_item = append_menu_item(&view_menu_box, "Fechar divisao", move || {
-        dispatch_ui_command(&view_close_split_controller, UiCommand::CloseSplitView, None);
+        dispatch_ui_command(&active_controller(&view_close_split_manager, &view_close_split_fallback), UiCommand::CloseSplitView, None);
     });
-    let view_sync_split_controller = initial.clone();
+    let view_sync_split_manager = tab_manager.clone();
+    let view_sync_split_fallback = initial.clone();
     let view_sync_split_item = append_menu_item(&view_menu_box, "Sincronizar panes", move || {
-        dispatch_ui_command(&view_sync_split_controller, UiCommand::ToggleSplitSync, None);
+        dispatch_ui_command(&active_controller(&view_sync_split_manager, &view_sync_split_fallback), UiCommand::ToggleSplitSync, None);
     });
 
     let menu_tabs_controller = initial.clone();
@@ -310,22 +357,26 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         }
     });
 
-    let menu_favorite_controller = initial.clone();
+    let menu_favorite_manager = tab_manager.clone();
+    let menu_favorite_fallback = initial.clone();
     let bookmarks_toggle_item = append_menu_item(&bookmarks_menu_box, "Alternar favorito", move || {
-        dispatch_ui_command(&menu_favorite_controller, UiCommand::ToggleFavoriteDocument, None);
+        dispatch_ui_command(&active_controller(&menu_favorite_manager, &menu_favorite_fallback), UiCommand::ToggleFavoriteDocument, None);
     });
-    let menu_page_bookmark_controller = initial.clone();
+    let menu_page_bookmark_manager = tab_manager.clone();
+    let menu_page_bookmark_fallback = initial.clone();
     let page_bookmark_toggle_item = append_menu_item(&bookmarks_menu_box, "Alternar marcador da página", move || {
-        dispatch_ui_command(&menu_page_bookmark_controller, UiCommand::ToggleCurrentPageBookmark, None);
+        dispatch_ui_command(&active_controller(&menu_page_bookmark_manager, &menu_page_bookmark_fallback), UiCommand::ToggleCurrentPageBookmark, None);
     });
 
-    let menu_settings_controller = initial.clone();
+    let menu_settings_manager = tab_manager.clone();
+    let menu_settings_fallback = initial.clone();
     let help_settings_item = append_menu_item(&help_menu_box, "Configurações", move || {
-        dispatch_ui_command(&menu_settings_controller, UiCommand::OpenSettingsDialog, None);
+        dispatch_ui_command(&active_controller(&menu_settings_manager, &menu_settings_fallback), UiCommand::OpenSettingsDialog, None);
     });
-    let menu_about_controller = initial.clone();
+    let menu_about_manager = tab_manager.clone();
+    let menu_about_fallback = initial.clone();
     let help_about_item = append_menu_item(&help_menu_box, "Sobre", move || {
-        dispatch_ui_command(&menu_about_controller, UiCommand::ShowAbout, None);
+        dispatch_ui_command(&active_controller(&menu_about_manager, &menu_about_fallback), UiCommand::ShowAbout, None);
     });
 
     // Keep references alive and update sensitivity based on document availability.
@@ -338,7 +389,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         help_settings_item,
         help_about_item,
     ];
-    let doc_sensitive_items = vec![
+    let doc_sensitive_items = Rc::new(vec![
         file_print_item,
         file_properties_item,
         edit_next_match_item,
@@ -350,28 +401,28 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         view_sync_split_item,
         bookmarks_toggle_item,
         page_bookmark_toggle_item,
-    ];
-    let sensitivity_controller = initial.clone();
-    let refresh_sensitivity = move || {
-        let has_document = sensitivity_controller.state.borrow().path.is_some();
-        for item in &doc_sensitive_items {
+    ]);
+    tab_manager.borrow().subscribe_active_controller(move |controller| {
+        let has_document = controller.state.borrow().path.is_some();
+        for item in doc_sensitive_items.iter() {
             item.set_sensitive(has_document);
         }
-    };
-    refresh_sensitivity();
-    initial.subscribe_state_changes(refresh_sensitivity);
+    });
 
-    let fullscreen_controller = initial.clone();
+    let fullscreen_manager = tab_manager.clone();
+    let fullscreen_fallback = initial.clone();
     fullscreen_button.connect_clicked(move |_| {
-        dispatch_ui_command(&fullscreen_controller, UiCommand::ToggleFullscreen, None);
+        dispatch_ui_command(&active_controller(&fullscreen_manager, &fullscreen_fallback), UiCommand::ToggleFullscreen, None);
     });
-    let properties_controller = initial.clone();
+    let properties_manager = tab_manager.clone();
+    let properties_fallback = initial.clone();
     properties_button.connect_clicked(move |_| {
-        dispatch_ui_command(&properties_controller, UiCommand::ShowDocumentProperties, None);
+        dispatch_ui_command(&active_controller(&properties_manager, &properties_fallback), UiCommand::ShowDocumentProperties, None);
     });
-    let presentation_controller = initial.clone();
+    let presentation_manager = tab_manager.clone();
+    let presentation_fallback = initial.clone();
     presentation_button.connect_clicked(move |_| {
-        dispatch_ui_command(&presentation_controller, UiCommand::TogglePresentation, None);
+        dispatch_ui_command(&active_controller(&presentation_manager, &presentation_fallback), UiCommand::TogglePresentation, None);
     });
     open_button.connect_clicked({
         let open_controller = open_controller.clone();
@@ -495,7 +546,7 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
 
     let controller = Rc::new(ViewerController {
         app: app.clone(),
-        tab_manager: tab_manager.clone(),
+        tab_manager: Rc::downgrade(&tab_manager),
         renderer: renderer.clone(),
         printer: printer.clone(),
         state: Rc::new(RefCell::new(ViewerState {
@@ -843,12 +894,6 @@ pub(crate) fn create_document_controller(params: DocumentControllerParams<'_>) -
             return gtk::glib::Propagation::Stop;
         }
         gtk::glib::Propagation::Proceed
-    });
-
-    let print_controller = controller.clone();
-    let print_button = controller.print_button.clone();
-    print_button.connect_clicked(move |_| {
-        print_controller.submit_print();
     });
 
     let previous_controller = controller.clone();

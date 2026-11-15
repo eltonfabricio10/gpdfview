@@ -63,6 +63,9 @@ pub(crate) fn open_document_in_new_tab(
         print_button,
     });
     tab_manager.borrow().add_tab_with_path(&new_controller.root, &filename, Some(path.clone()));
+    tab_manager
+        .borrow()
+        .register_controller(&new_controller.root, new_controller.clone());
     remember_recent_document(&path);
     new_controller.open_document(path);
     Some(new_controller)

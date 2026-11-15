@@ -626,53 +626,56 @@ pub fn build_sidebar(
         });
     }
 
-    let state_signature = Rc::new(RefCell::new((
-        None::<PathBuf>,
-        -1,
-        -1,
-        0,
-        String::new(),
-        0_usize,
-        0_usize,
-    )));
-    let watch_controller = controller.clone();
-    let watch_flow = pages_flow.clone();
-    let watch_outline = outline_list.clone();
-    let watch_cache = thumbnail_cache.clone();
-    let watch_search = search_list.clone();
-    let watch_bookmarks = app_bookmarks_list.clone();
-    let watch_signature = state_signature.clone();
-    controller.subscribe_state_changes(move || {
-        let snapshot = {
-            let state = watch_controller.state.borrow();
-            (
-                state.path.clone(),
-                state.page_index,
-                state.page_count,
-                state.rotation,
-                state.search_query.clone(),
-                state.search_results.len(),
-                state.search_global_index,
-            )
-        };
-        let previous = watch_signature.borrow().clone();
-        if snapshot == previous {
-            return;
-        }
+    let active_pages = pages_flow.clone();
+    let active_outline = outline_list.clone();
+    let active_search = search_list.clone();
+    let active_bookmarks = app_bookmarks_list.clone();
+    let active_thumbnail_cache = thumbnail_cache.clone();
+    let observed_controllers = Rc::new(RefCell::new(std::collections::HashSet::new()));
+    let weak_tab_manager = Rc::downgrade(&tab_manager);
+    tab_manager
+        .borrow()
+        .subscribe_active_controller(move |active_controller| {
+            populate_pages_flow(
+                &active_pages,
+                &active_controller,
+                &active_thumbnail_cache,
+            );
+            populate_outline_list(&active_outline, &active_controller);
+            populate_search_results_list(&active_search, &active_controller);
+            populate_app_bookmarks_list(&active_bookmarks, &active_controller);
 
-        populate_pages_flow(&watch_flow, &watch_controller, &watch_cache);
-        if snapshot.0 != previous.0 {
-            populate_outline_list(&watch_outline, &watch_controller);
-            populate_app_bookmarks_list(&watch_bookmarks, &watch_controller);
-        }
-        if snapshot.1 != previous.1 || snapshot.0 != previous.0 {
-            populate_app_bookmarks_list(&watch_bookmarks, &watch_controller);
-        }
-        if snapshot.4 != previous.4 || snapshot.5 != previous.5 || snapshot.6 != previous.6 {
-            populate_search_results_list(&watch_search, &watch_controller);
-        }
-        *watch_signature.borrow_mut() = snapshot;
-    });
+            let controller_id = Rc::as_ptr(&active_controller.state) as usize;
+            if !observed_controllers.borrow_mut().insert(controller_id) {
+                return;
+            }
+            let watched_state = active_controller.state.clone();
+            let pages = active_pages.clone();
+            let outline = active_outline.clone();
+            let search = active_search.clone();
+            let bookmarks = active_bookmarks.clone();
+            let cache = active_thumbnail_cache.clone();
+            let manager = weak_tab_manager.clone();
+            active_controller.subscribe_state_changes(move || {
+                let Some(manager) = manager.upgrade() else {
+                    return;
+                };
+                let is_active = manager
+                    .borrow()
+                    .active_controller()
+                    .is_some_and(|current| Rc::ptr_eq(&current.state, &watched_state));
+                if !is_active {
+                    return;
+                }
+                let Some(controller) = manager.borrow().active_controller() else {
+                    return;
+                };
+                populate_pages_flow(&pages, &controller, &cache);
+                populate_outline_list(&outline, &controller);
+                populate_search_results_list(&search, &controller);
+                populate_app_bookmarks_list(&bookmarks, &controller);
+            });
+        });
 
     sidebar_root
 }

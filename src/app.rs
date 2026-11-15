@@ -24,7 +24,7 @@ use gtk4::cairo::ImageSurface;
 use gtk::gio;
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 
 #[cfg(test)]
 use std::fs;
@@ -65,7 +65,7 @@ fn normalize_print_page_range(mode: &str, page_count: u32, current_page: u32) ->
 #[derive(Clone)]
 pub(crate) struct ViewerController {
     pub(crate) app: adw::Application,
-    pub(crate) tab_manager: Rc<RefCell<crate::document_tabs::DocumentTabManager>>,
+    pub(crate) tab_manager: Weak<RefCell<crate::document_tabs::DocumentTabManager>>,
     pub(crate) renderer: Rc<PdfRenderer>,
     pub(crate) printer: Rc<PrintService>,
     pub(crate) state: Rc<RefCell<ViewerState>>,
@@ -756,6 +756,10 @@ pub fn run() {
         let Some(controller) = controller_slot.borrow().clone() else {
             return;
         };
+        let Some(tab_manager) = controller.tab_manager.upgrade() else {
+            controller.status.set_text("The document tab manager is unavailable.");
+            return;
+        };
 
         for file in files {
             let Some(path) = file.path() else {
@@ -776,7 +780,7 @@ pub fn run() {
             crate::document_actions::open_document_in_new_tab(
                 &controller.app,
                 &controller.window,
-                controller.tab_manager.clone(),
+                tab_manager.clone(),
                 path,
                 controller.title.clone(),
                 controller.print_button.clone(),
