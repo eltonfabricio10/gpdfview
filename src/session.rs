@@ -1,7 +1,47 @@
 use std::env;
 use std::fs;
 use std::collections::HashMap;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_SESSION_TEMP_ID: AtomicU64 = AtomicU64::new(0);
+
+fn persist_session_file(path: &Path, contents: &[u8]) {
+    let parent = path.parent().unwrap_or(Path::new("."));
+    let result = (|| {
+        fs::create_dir_all(parent)?;
+        let id = NEXT_SESSION_TEMP_ID.fetch_add(1, Ordering::Relaxed);
+        let filename = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("session");
+        let temporary = parent.join(format!(
+            ".{filename}.{}.{}.tmp",
+            std::process::id(),
+            id
+        ));
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)?;
+        let write_result = file.write_all(contents).and_then(|()| file.sync_all());
+        drop(file);
+        if let Err(error) = write_result {
+            let _ = fs::remove_file(&temporary);
+            return Err(error);
+        }
+        if let Err(error) = fs::rename(&temporary, path) {
+            let _ = fs::remove_file(&temporary);
+            return Err(error);
+        }
+        Ok(())
+    })();
+
+    if let Err(error) = result {
+        eprintln!("Could not save session file {}: {error}", path.display());
+    }
+}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AppSettings {
@@ -59,7 +99,7 @@ pub fn save_app_settings_for_home(home: &Path, settings: &AppSettings) {
     for (action, value) in shortcuts.iter() {
         lines.push(format!("shortcut:{action}={value}"));
     }
-    let _ = fs::write(settings_file_for_home(home), lines.join("\n"));
+    persist_session_file(&settings_file_for_home(home), lines.join("\n").as_bytes());
 }
 
 pub fn load_app_settings_for_home(home: &Path) -> AppSettings {
@@ -139,7 +179,7 @@ fn resume_last_document_file_for_home(home: &Path) -> PathBuf {
 
 pub fn remember_resume_last_document_for_home(home: &Path, should_resume: bool) {
     let value = if should_resume { "1" } else { "0" };
-    let _ = fs::write(resume_last_document_file_for_home(home), value);
+    persist_session_file(&resume_last_document_file_for_home(home), value.as_bytes());
 }
 
 pub fn remember_resume_last_document(should_resume: bool) {
@@ -163,7 +203,7 @@ pub fn should_resume_last_document() -> bool {
 pub fn remember_window_geometry_for_home(home: &Path, width: i32, height: i32) {
     let storage = session_storage_dir_for(home);
     let file = storage.join("window_size.txt");
-    let _ = fs::write(file, format!("{width} {height}"));
+    persist_session_file(&file, format!("{width} {height}").as_bytes());
 }
 
 fn window_state_file_for_home(home: &Path) -> PathBuf {
@@ -174,7 +214,10 @@ pub fn remember_window_state_for_home(home: &Path, is_maximized: bool, is_fullsc
     let file = window_state_file_for_home(home);
     let maximized = if is_maximized { "1" } else { "0" };
     let fullscreen = if is_fullscreen { "1" } else { "0" };
-    let _ = fs::write(file, format!("maximized={maximized}\nfullscreen={fullscreen}\n"));
+    persist_session_file(
+        &file,
+        format!("maximized={maximized}\nfullscreen={fullscreen}\n").as_bytes(),
+    );
 }
 
 pub fn remember_window_state(is_maximized: bool, is_fullscreen: bool) {
@@ -223,7 +266,7 @@ pub fn remember_last_directory_for_home(home: &Path, dir: &Path) {
         let _ = fs::remove_file(file);
         return;
     }
-    let _ = fs::write(file, trimmed);
+    persist_session_file(&file, trimmed.as_bytes());
 }
 
 pub fn remember_last_directory(dir: &Path) {
@@ -257,7 +300,6 @@ pub fn last_window_state_for_home_path() -> Option<(bool, bool)> {
 }
 
 pub fn write_session_entries(path: &Path, entries: &[PathBuf]) {
-    let _ = fs::create_dir_all(path.parent().unwrap_or(Path::new(".")));
     let joined = entries
         .iter()
         .filter_map(|entry| {
@@ -270,7 +312,7 @@ pub fn write_session_entries(path: &Path, entries: &[PathBuf]) {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    let _ = fs::write(path, format!("{joined}\n"));
+    persist_session_file(path, format!("{joined}\n").as_bytes());
 }
 
 pub fn read_session_entries(path: &Path) -> Vec<PathBuf> {
@@ -359,7 +401,7 @@ fn write_app_bookmarks(home: &Path, entries: &[AppBookmark]) {
         })
         .collect::<Vec<_>>()
         .join("\n");
-    let _ = fs::write(file, format!("{content}\n"));
+    persist_session_file(&file, format!("{content}\n").as_bytes());
 }
 
 fn load_all_app_bookmarks_for_home(home: &Path) -> Vec<AppBookmark> {
@@ -512,7 +554,7 @@ fn write_document_states(home: &Path, states: &HashMap<String, PersistedDocument
         ));
     }
     lines.sort_unstable();
-    let _ = fs::write(file, lines.join("\n"));
+    persist_session_file(&file, lines.join("\n").as_bytes());
 }
 
 pub fn remember_document_view_for_home(
