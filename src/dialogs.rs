@@ -57,7 +57,7 @@ pub(crate) fn build_settings_dialog(
     dialog.set_title(Some("Preferences"));
     dialog.set_transient_for(Some(parent));
     dialog.set_modal(true);
-    dialog.set_default_size(520, 460);
+    dialog.set_default_size(560, 580);
 
     let content = gtk::Box::new(gtk::Orientation::Vertical, 10);
     content.set_margin_top(12);
@@ -70,41 +70,63 @@ pub(crate) fn build_settings_dialog(
     title.set_markup("<b>Configurações do gpdfview</b>");
     content.append(&title);
 
+    let settings_sections = gtk::Box::new(gtk::Orientation::Vertical, 12);
+
+    let view_section = gtk::Frame::new(Some("Visualização do documento"));
+    let view_options = gtk::Box::new(gtk::Orientation::Vertical, 10);
+    view_options.set_margin_top(10);
+    view_options.set_margin_bottom(10);
+    view_options.set_margin_start(10);
+    view_options.set_margin_end(10);
+
     let layout_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     let layout_label = gtk::Label::new(Some("Layout padrão:"));
     layout_label.set_width_chars(18);
-    let layout_values = ["single", "continuous", "two-page"];
-    let layout_model = gtk::StringList::new(&layout_values);
+    layout_label.set_xalign(0.0);
+    let layout_ids = ["single", "continuous", "two-page"];
+    let layout_labels = ["Página única", "Contínuo", "Duas páginas"];
+    let layout_model = gtk::StringList::new(&layout_labels);
     let layout_combo = gtk::DropDown::new(Some(layout_model.clone()), None::<gtk::Expression>);
-    layout_combo.set_selected(match settings.default_layout.as_str() {
-        "continuous" => 1,
-        "two-page" => 2,
-        _ => 0,
-    } as u32);
+    layout_combo.set_selected(
+        layout_ids
+            .iter()
+            .position(|layout| *layout == settings.default_layout)
+            .unwrap_or(0) as u32,
+    );
     layout_row.append(&layout_label);
     layout_row.append(&layout_combo);
-    content.append(&layout_row);
+    view_options.append(&layout_row);
 
     let sync_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    let sync_label = gtk::Label::new(Some("Sincronizar split view:"));
+    let sync_label = gtk::Label::new(Some("Sincronizar painéis divididos"));
+    sync_label.set_xalign(0.0);
+    sync_label.set_hexpand(true);
     let sync_switch = gtk::Switch::new();
     sync_switch.set_active(settings.split_sync);
     sync_row.append(&sync_label);
     sync_row.append(&sync_switch);
-    content.append(&sync_row);
+    view_options.append(&sync_row);
 
     let zoom_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    let zoom_label = gtk::Label::new(Some("Passo de zoom:"));
+    let zoom_label = gtk::Label::new(Some("Incremento do zoom:"));
+    zoom_label.set_xalign(0.0);
     let zoom_entry = gtk::Entry::new();
     zoom_entry.set_text(&settings.zoom_step.to_string());
     zoom_row.append(&zoom_label);
     zoom_row.append(&zoom_entry);
-    content.append(&zoom_row);
+    view_options.append(&zoom_row);
+    view_section.set_child(Some(&view_options));
+    settings_sections.append(&view_section);
 
+    let shortcuts_section = gtk::Frame::new(Some("Atalhos de teclado"));
     let shortcut_grid = gtk::Grid::new();
     shortcut_grid.set_row_spacing(6);
     shortcut_grid.set_column_spacing(8);
     shortcut_grid.set_hexpand(true);
+    shortcut_grid.set_margin_top(10);
+    shortcut_grid.set_margin_bottom(10);
+    shortcut_grid.set_margin_start(10);
+    shortcut_grid.set_margin_end(10);
     let shortcut_actions = [
         ("open_file", "Abrir arquivo"),
         ("focus_search", "Procurar"),
@@ -130,7 +152,9 @@ pub(crate) fn build_settings_dialog(
             entry
         })
         .collect::<Vec<_>>();
-    content.append(&shortcut_grid);
+    shortcuts_section.set_child(Some(&shortcut_grid));
+    settings_sections.append(&shortcuts_section);
+    content.append(&settings_sections);
 
     let actions_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     actions_row.set_halign(gtk::Align::End);
@@ -147,13 +171,13 @@ pub(crate) fn build_settings_dialog(
     let settings_for_save = settings.clone();
     let shortcut_entries_for_save = shortcut_entries.clone();
     let layout_combo_for_save = layout_combo.clone();
-    let layout_values_for_save = layout_values;
+    let layout_ids_for_save = layout_ids;
     let zoom_entry_for_save = zoom_entry.clone();
     let sync_switch_for_save = sync_switch.clone();
     save_button.connect_clicked(move |_| {
         let mut next_settings = settings_for_save.clone();
         let selected_layout_index = layout_combo_for_save.selected() as usize;
-        next_settings.default_layout = layout_values_for_save
+        next_settings.default_layout = layout_ids_for_save
             .get(selected_layout_index)
             .copied()
             .unwrap_or("single")
