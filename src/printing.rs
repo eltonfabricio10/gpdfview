@@ -96,13 +96,17 @@ impl PrintService {
 
     pub fn submit_with_options(&self, path: PathBuf, options: PrintOptions) -> Result<(), String> {
         if self.stopped.load(Ordering::Relaxed) {
-            return Err("The print worker is shutting down".to_string());
+            return Err("O serviço de impressão está sendo encerrado.".to_string());
         }
         self.requests
             .try_send(PrintCommand::Print(PrintRequest { path, options }))
             .map_err(|error| match error {
-                TrySendError::Full(_) => "A print job is already running".to_string(),
-                TrySendError::Disconnected(_) => "The print worker is unavailable".to_string(),
+                TrySendError::Full(_) => {
+                    "Já existe um trabalho de impressão em andamento.".to_string()
+                }
+                TrySendError::Disconnected(_) => {
+                    "O serviço de impressão está indisponível.".to_string()
+                }
             })
     }
 
@@ -148,18 +152,18 @@ impl Drop for TemporaryPdf {
 
 fn print_pdf(path: &Path, options: &PrintOptions) -> Result<PrintOutcome, String> {
     if !path.is_file() {
-        return Err(format!("{} is not a readable PDF file", path.display()));
+        return Err(format!("{} não é um arquivo PDF legível.", path.display()));
     }
 
     match submit_to_cups(path, options) {
         Ok(output) => Ok(PrintOutcome {
-            message: format!("PDF sent directly to the default printer. {output}"),
+            message: format!("PDF enviado diretamente à impressora padrão. {output}"),
         }),
         Err(direct_error) => {
             let rendered = TemporaryPdf::create();
             render_for_printing(path, &rendered.0, options).map_err(|render_error| {
                 format!(
-                    "Direct PDF submission failed ({direct_error}); print fallback failed ({render_error})"
+                    "Falha no envio direto ({direct_error}); falha na geração alternativa ({render_error})"
                 )
             })?;
             let mut fallback_options = options.clone();
@@ -168,13 +172,11 @@ fn print_pdf(path: &Path, options: &PrintOptions) -> Result<PrintOutcome, String
             fallback_options.scale_percent = 100;
             let output = submit_to_cups(&rendered.0, &fallback_options).map_err(|fallback_error| {
                 format!(
-                    "Direct PDF submission failed ({direct_error}); rendered fallback failed ({fallback_error})"
+                    "Falha no envio direto ({direct_error}); falha no envio da versão processada ({fallback_error})"
                 )
             })?;
             Ok(PrintOutcome {
-                message: format!(
-                    "Rendered pages and sent the fallback PDF to the default printer. {output}"
-                ),
+                message: format!("Páginas processadas e enviadas à impressora padrão. {output}"),
             })
         }
     }
@@ -227,7 +229,7 @@ fn render_for_printing(
     let document = Document::from_file(&file.uri(), None).map_err(|error| error.to_string())?;
     let page_count = document.n_pages();
     if page_count <= 0 {
-        return Err("PDF contains no printable pages".into());
+        return Err("O PDF não contém páginas imprimíveis.".into());
     }
 
     let (start_page, end_page) = if let Some((start, end)) = options.page_range {
@@ -238,7 +240,7 @@ fn render_for_printing(
         (0, page_count - 1)
     };
     if start_page > end_page {
-        return Err("Invalid page range for printing".to_string());
+        return Err("O intervalo de páginas para impressão é inválido.".to_string());
     }
 
     let scale = f64::from(options.scale_percent.clamp(10, 400)) / 100.0;
@@ -267,14 +269,14 @@ fn render_for_printing(
         }
         let surface = surface
             .as_ref()
-            .ok_or_else(|| "Could not initialize print surface".to_string())?;
+            .ok_or_else(|| "Não foi possível inicializar a superfície de impressão.".to_string())?;
         let context = Context::new(surface).map_err(|error| error.to_string())?;
         context.scale(scale, scale);
         page.render_for_printing(&context);
         context.show_page().map_err(|error| error.to_string())?;
     }
 
-    let surface = surface.ok_or_else(|| "PDF contains no printable pages".to_string())?;
+    let surface = surface.ok_or_else(|| "O PDF não contém páginas imprimíveis.".to_string())?;
     surface.finish();
     surface.status().map_err(|error| error.to_string())
 }
@@ -340,6 +342,6 @@ mod tests {
         let error = super::print_pdf(&missing.0, &PrintOptions::default())
             .expect_err("missing input must fail");
 
-        assert!(error.contains("not a readable PDF file"));
+        assert!(error.contains("não é um arquivo PDF legível"));
     }
 }
