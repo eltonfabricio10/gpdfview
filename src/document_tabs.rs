@@ -184,6 +184,13 @@ impl DocumentTabManager {
         recently_closed.remove(index).path
     }
 
+    pub fn has_restorable_closed_path(&self) -> bool {
+        self.recently_closed
+            .borrow()
+            .iter()
+            .any(|metadata| metadata.path.is_some())
+    }
+
     #[allow(dead_code)]
     pub fn add_tab(&self, page: &gtk4::Box, title: &str) {
         self.add_tab_with_path(page, title, None);

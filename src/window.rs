@@ -75,10 +75,6 @@ where
     item
 }
 
-fn append_menu_separator(menu_box: &gtk::Box) {
-    menu_box.append(&gtk::Separator::new(gtk::Orientation::Horizontal));
-}
-
 fn active_controller(
     tab_manager: &Rc<RefCell<DocumentTabManager>>,
     fallback: &Rc<ViewerController>,
@@ -283,11 +279,6 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
             None,
         );
     });
-    append_menu_separator(&file_menu_box);
-    let menu_about_from_file = initial.clone();
-    let _file_about_item = append_menu_item(&file_menu_box, "Sobre", move || {
-        dispatch_ui_command(&menu_about_from_file, UiCommand::ShowAbout, None);
-    });
 
     let menu_search_manager = tab_manager.clone();
     let menu_search_fallback = initial.clone();
@@ -300,7 +291,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     });
     let edit_next_manager = tab_manager.clone();
     let edit_next_fallback = initial.clone();
-    let edit_next_match_item = append_menu_item(&edit_menu_box, "Proximo resultado", move || {
+    let edit_next_match_item = append_menu_item(&edit_menu_box, "Próximo resultado", move || {
         active_controller(&edit_next_manager, &edit_next_fallback).search_next_match();
     });
     let edit_prev_manager = tab_manager.clone();
@@ -365,13 +356,14 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     });
     let view_presentation_manager = tab_manager.clone();
     let view_presentation_fallback = initial.clone();
-    let view_presentation_item = append_menu_item(&view_menu_box, "Modo apresentacao", move || {
-        dispatch_ui_command(
-            &active_controller(&view_presentation_manager, &view_presentation_fallback),
-            UiCommand::TogglePresentation,
-            None,
-        );
-    });
+    let view_presentation_item =
+        append_menu_item(&view_menu_box, "Modo de apresentação", move || {
+            dispatch_ui_command(
+                &active_controller(&view_presentation_manager, &view_presentation_fallback),
+                UiCommand::TogglePresentation,
+                None,
+            );
+        });
     let view_split_horizontal_manager = tab_manager.clone();
     let view_split_horizontal_fallback = initial.clone();
     let view_split_horizontal_item =
@@ -397,7 +389,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         });
     let view_close_split_manager = tab_manager.clone();
     let view_close_split_fallback = initial.clone();
-    let view_close_split_item = append_menu_item(&view_menu_box, "Fechar divisao", move || {
+    let view_close_split_item = append_menu_item(&view_menu_box, "Fechar divisão", move || {
         dispatch_ui_command(
             &active_controller(&view_close_split_manager, &view_close_split_fallback),
             UiCommand::CloseSplitView,
@@ -406,13 +398,14 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     });
     let view_sync_split_manager = tab_manager.clone();
     let view_sync_split_fallback = initial.clone();
-    let view_sync_split_item = append_menu_item(&view_menu_box, "Sincronizar panes", move || {
-        dispatch_ui_command(
-            &active_controller(&view_sync_split_manager, &view_sync_split_fallback),
-            UiCommand::ToggleSplitSync,
-            None,
-        );
-    });
+    let view_sync_split_item =
+        append_menu_item(&view_menu_box, "Sincronizar painéis", move || {
+            dispatch_ui_command(
+                &active_controller(&view_sync_split_manager, &view_sync_split_fallback),
+                UiCommand::ToggleSplitSync,
+                None,
+            );
+        });
 
     let menu_tabs_controller = initial.clone();
     let tabs_hint_item = append_menu_item(&tabs_menu_box, "Gerenciar abas", move || {
@@ -424,8 +417,9 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     let restore_tab_window = window.clone();
     let restore_tab_title = title.clone();
     let restore_tab_button = print_button.clone();
-    let _restore_tab_item = append_menu_item(&tabs_menu_box, "Restaurar última aba", move || {
-        if let Some(path) = restore_tab_manager.borrow().restore_last_closed_path() {
+    let restore_tab_item = append_menu_item(&tabs_menu_box, "Restaurar última aba", move || {
+        let path = { restore_tab_manager.borrow().restore_last_closed_path() };
+        if let Some(path) = path {
             if open_document_in_new_tab(
                 &restore_tab_app,
                 &restore_tab_window,
@@ -448,17 +442,21 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
                 .set_text("Não há aba fechada para restaurar.");
         }
     });
+    restore_tab_item.set_sensitive(tab_manager.borrow().has_restorable_closed_path());
 
     let menu_favorite_manager = tab_manager.clone();
     let menu_favorite_fallback = initial.clone();
-    let bookmarks_toggle_item =
-        append_menu_item(&bookmarks_menu_box, "Alternar favorito", move || {
+    let bookmarks_toggle_item = append_menu_item(
+        &bookmarks_menu_box,
+        "Alternar favorito do documento",
+        move || {
             dispatch_ui_command(
                 &active_controller(&menu_favorite_manager, &menu_favorite_fallback),
                 UiCommand::ToggleFavoriteDocument,
                 None,
             );
-        });
+        },
+    );
     let menu_page_bookmark_manager = tab_manager.clone();
     let menu_page_bookmark_fallback = initial.clone();
     let page_bookmark_toggle_item = append_menu_item(
@@ -526,9 +524,16 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     let weak_edit_prev_match = edit_prev_match_item.downgrade();
     let weak_first_page = first_page_item.downgrade();
     let weak_last_page = last_page_item.downgrade();
+    let weak_restore_tab = restore_tab_item.downgrade();
+    let weak_restore_manager = Rc::downgrade(&tab_manager);
     tab_manager
         .borrow()
         .subscribe_active_controller(move |controller| {
+            if let (Some(item), Some(manager)) =
+                (weak_restore_tab.upgrade(), weak_restore_manager.upgrade())
+            {
+                item.set_sensitive(manager.borrow().has_restorable_closed_path());
+            }
             if let Some(current_toolbar) = active_toolbar_host.first_child() {
                 active_toolbar_host.remove(&current_toolbar);
             }
@@ -566,10 +571,12 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
                         item.set_sensitive(!state.forward_history.is_empty());
                     }
                     if let Some(item) = first_item.upgrade() {
-                        item.set_sensitive(state.path.is_some() && state.page_count > 0);
+                        item.set_sensitive(state.path.is_some() && state.page_index > 0);
                     }
                     if let Some(item) = last_item.upgrade() {
-                        item.set_sensitive(state.path.is_some() && state.page_count > 0);
+                        item.set_sensitive(
+                            state.path.is_some() && state.page_index < state.page_count - 1,
+                        );
                     }
                     let has_matches = !state.search_results.is_empty();
                     if let Some(item) = next_match_item.upgrade() {
@@ -589,10 +596,10 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
             }
             let has_pages = has_document && state.page_count > 0;
             if let Some(item) = weak_first_page.upgrade() {
-                item.set_sensitive(has_pages);
+                item.set_sensitive(has_pages && state.page_index > 0);
             }
             if let Some(item) = weak_last_page.upgrade() {
-                item.set_sensitive(has_pages);
+                item.set_sensitive(has_pages && state.page_index < state.page_count - 1);
             }
             let has_matches = !state.search_results.is_empty();
             if let Some(item) = weak_edit_next_match.upgrade() {
