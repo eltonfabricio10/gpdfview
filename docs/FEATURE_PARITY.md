@@ -38,7 +38,7 @@
 | Capability | gpdfview status | Evidence in gpdfview | Remaining work |
 |---|---|---|---|
 | Search text in current page | IMPLEMENTADO | `src/engine.rs::find_text_rectangles_in_page` | Current UI actually performs whole-document search; make wording precise |
-| Search across full document | PARCIAL | `src/engine.rs::find_text_rectangles_in_document_cancellable`, `src/rendering.rs` worker, bounded progress channel and generation handling | Search runs off the GTK thread, reports the page being scanned, releases the Poppler mutex between pages and caps results at 1,000 with a notice; partial results and stress tests remain |
+| Search across full document | IMPLEMENTADO | `src/engine.rs::find_text_rectangles_in_document_cancellable`, `src/rendering.rs` worker, generation/path/query validation and bounded results | Preserve partial results and stress tests for very large documents |
 | Navigate next/previous search result | IMPLEMENTADO | `src/rendering.rs`, `src/app.rs`, `src/viewer_state.rs` | Cross-tab focus and stale query cancellation |
 | Highlight search results | IMPLEMENTADO | `src/viewer_state.rs`, `src/window.rs` | Visual tests for multiple matches and page changes |
 | Thumbnail page navigator | PARCIAL | `src/sidebar.rs` bounded thumbnail workers and `src/engine.rs::render_page_thumbnail_cancellable`, separate 24 MiB cache | Typing a page number starts the visible block there; paging controls hide when unavailable; empty text wraps and resets horizontal scroll so the message remains fully visible when a PDF closes or none is open; full-list virtualization and GUI verification remain |
@@ -78,7 +78,8 @@
 | Search/thumbnail/outline not blocking GTK | PARCIAL | `src/rendering.rs`, `src/sidebar.rs` use workers, generation checks and bounded thumbnail concurrency | Add incremental search/progress and stress-test cancellation and worker pressure |
 | Robust persistence and surfaced I/O errors | PARCIAL | `src/session.rs::try_persist_session_file` uses temporary files, sync and atomic rename; settings save returns errors to `src/dialogs.rs` | Other session writes still log failures instead of surfacing them; schema versioning and recovery tests remain |
 | Print scaling behavior | PARCIAL | `src/printing.rs` applies scale to direct CUPS submission; fallback PDF embeds the scale and resets CUPS scaling to 100% | Verify orientation, scale and geometry on supported CUPS/IPP backends |
-| Benchmark first-visible-page latency and app RSS | COM PROBLEMAS | `scripts/benchmark.sh` samples `timeout` wrapper after fixed sleep | Replace harness; invalidate old TSV as a comparable baseline |
+| Robust input validation | IMPLEMENTADO | `src/engine.rs::validate_pdf_path`, shared by Poppler and print fallback | Add password flow and hostile-resource corpus |
+| Benchmark first-visible-page latency and app RSS | PARCIAL | `scripts/benchmark.sh` samples the real application process, RSS and visible window when xdotool can identify it | Current Wayland session reports `process-live-no-window`; add compositor-level presentation instrumentation |
 | PDF password prompt | AUSENTE | Loading paths pass no password to `Document::from_file` | Implement secure password flow if required |
 | Handling malformed PDFs and resource limits | PARCIAL | Some errors are returned, but comprehensive hostile-file/resource tests are absent | Fuzz/safety tests, limits and robust error UX |
 

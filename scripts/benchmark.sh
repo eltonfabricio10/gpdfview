@@ -4,10 +4,11 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_BIN="${APP_BIN:-$ROOT_DIR/target/debug/gpdfview}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/measurements}"
+SAMPLE_TIMEOUT_MS="${SAMPLE_TIMEOUT_MS:-10000}"
 mkdir -p "$OUTPUT_DIR"
 
 if [[ -z "${DISPLAY:-}" && -z "${WAYLAND_DISPLAY:-}" ]]; then
-  echo "GUI benchmark skipped: no active DISPLAY/WAYLAND session detected."
+  echo "Benchmark GUI ignorado: DISPLAY/WAYLAND_DISPLAY não está ativo."
   exit 0
 fi
 
@@ -18,46 +19,68 @@ else
 fi
 
 if [[ ${#pdfs[@]} -eq 0 ]]; then
-  echo "No PDF fixtures were found." >&2
+  echo "Nenhum PDF foi encontrado." >&2
   exit 1
 fi
 
 if [[ ! -x "$APP_BIN" ]]; then
-  echo "Building gpdfview before benchmarking..."
   cargo build --quiet --bin gpdfview --manifest-path "$ROOT_DIR/Cargo.toml"
 fi
 
 report="$OUTPUT_DIR/gpdfview_benchmark.tsv"
-: > "$report"
+printf 'file\twindow_ms\tprocess_sample_ms\trss_kb\tstatus\n' > "$report"
 
 for pdf in "${pdfs[@]}"; do
   if [[ ! -f "$pdf" ]]; then
-    echo "Skipping missing file: $pdf" >&2
+    echo "Arquivo ausente ignorado: $pdf" >&2
     continue
   fi
 
-  filename="$(basename "$pdf")"
   start_ns=$(date +%s%N)
-  timeout 12s "$APP_BIN" "$pdf" >/tmp/gpdfview-benchmark.log 2>&1 &
-  pid=$!
+  "$APP_BIN" "$pdf" >"$OUTPUT_DIR/gpdfview-last.log" 2>&1 &
+  app_pid=$!
+  window_ms=""
+  rss_kb=0
+  status="failed"
+  deadline_ms=$(( $(date +%s%3N) + SAMPLE_TIMEOUT_MS ))
 
-  sleep 1
-  if kill -0 "$pid" 2>/dev/null; then
-    rss_kb=$(awk '/VmRSS/ {print $2}' "/proc/$pid/status" 2>/dev/null || echo 0)
-    status="started"
-  else
-    rss_kb=0
-    status="failed"
+  while [[ $(date +%s%3N) -lt $deadline_ms ]] && kill -0 "$app_pid" 2>/dev/null; do
+    window_id=$(xdotool search --pid "$app_pid" --onlyvisible --name "gpdfview|$(basename "$pdf")" 2>/dev/null | head -n1 || true)
+    if [[ -n "$window_id" ]]; then
+      now_ns=$(date +%s%N)
+      window_ms=$(((now_ns - start_ns) / 1000000))
+      rss_kb=$(awk '/^VmRSS:/ {print $2}' "/proc/$app_pid/status" 2>/dev/null || echo 0)
+      status="window-visible"
+      break
+    fi
+    sleep 0.05
+  done
+
+  if [[ -z "$window_ms" ]] && kill -0 "$app_pid" 2>/dev/null; then
+    rss_kb=$(awk '/^VmRSS:/ {print $2}' "/proc/$app_pid/status" 2>/dev/null || echo 0)
+    status="process-live-no-window"
   fi
 
-  end_ns=$(date +%s%N)
-  elapsed_ms=$(((end_ns - start_ns) / 1000000))
+  kill "$app_pid" 2>/dev/null || true
+  wait "$app_pid" 2>/dev/null || true
 
-  kill "$pid" 2>/dev/null || true
-  wait "$pid" 2>/dev/null || true
-
-  printf '%s\t%s\t%s\t%s\n' "$filename" "$elapsed_ms" "$rss_kb" "$status" >> "$report"
-  echo "Recorded $filename: ${elapsed_ms} ms, RSS ${rss_kb} KB, status=${status}"
+  filename="$(basename "$pdf")"
+  sample_ns=$(date +%s%N)
+  process_sample_ms=$(((sample_ns - start_ns) / 1000000))
+  printf '%s\t%s\t%s\t%s\t%s\n' "$filename" "${window_ms:-timeout}" "$process_sample_ms" "$rss_kb" "$status" >> "$report"
+  echo "Registrado $filename: janela=${window_ms:-timeout} ms, amostra=${process_sample_ms} ms, RSS=${rss_kb} KB, status=${status}"
 done
 
-echo "Benchmark report written to $report"
+{
+  echo "timestamp=$(date --iso-8601=seconds)"
+  echo "commit=$(git -C "$ROOT_DIR" rev-parse HEAD)"
+  echo "kernel=$(uname -srmo)"
+  echo "display=${DISPLAY:-none}"
+  echo "wayland=${WAYLAND_DISPLAY:-none}"
+  echo "rust=$(rustc --version)"
+  echo "gtk=$(pkg-config --modversion gtk4 2>/dev/null || echo unavailable)"
+  echo "poppler=$(pkg-config --modversion poppler-glib 2>/dev/null || echo unavailable)"
+} > "$OUTPUT_DIR/gpdfview_environment.txt"
+
+echo "Relatório: $report"
+echo "Ambiente: $OUTPUT_DIR/gpdfview_environment.txt"
