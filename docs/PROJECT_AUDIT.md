@@ -5,6 +5,8 @@
 **Repository:** `https://github.com/eltonfabricio10/gpdfview`  
 **Scope:** static inspection of the supplied ZIP; no application source code was changed.
 
+> **Historical baseline:** this report records findings from the 2026-11-03 ZIP, not the current checkout. Several findings below have since been addressed. Use [`FEATURE_PARITY.md`](FEATURE_PARITY.md) for current source-based status and [`IMPLEMENTATION_PLAN.md`](IMPLEMENTATION_PLAN.md) for subsequent work.
+
 ## 1. Executive summary
 
 The supplied project is beyond an initial prototype. It contains a modular Rust/GTK4 application with PDF rendering, per-document viewer state, tabs, navigation, search, thumbnails, outline extraction, bookmarks, settings/session persistence, and CUPS printing with a rendered-PDF fallback.

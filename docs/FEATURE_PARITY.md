@@ -18,9 +18,9 @@
 |---|---|---|---|
 | Open a local PDF | IMPLEMENTADO | `src/app.rs`, `src/document_actions.rs`, `src/engine.rs` | Runtime tests with invalid, protected and inaccessible files |
 | Open multiple PDFs in separate tabs through file picker | IMPLEMENTADO | `src/document_actions.rs::show_open_dialog` uses `open_multiple`; `src/document_tabs.rs` | Verify many-file selection and tab activation |
-| Open multiple files from a GApplication open request | COM PROBLEMAS | `src/app.rs::run` uses `files.first()` | Iterate and open every supplied file |
-| Tabbed documents | COM PROBLEMAS | `src/document_tabs.rs`; `src/document_actions.rs`; `src/window.rs` | Route all shared actions to active tab; do not accumulate print handlers |
-| Reorder tabs and close correct document | COM PROBLEMAS | `src/document_tabs.rs` keeps parallel title/path vectors and allows reorderable tabs | Synchronize metadata to notebook order or bind identity to page |
+| Open multiple files from a GApplication open request | IMPLEMENTADO | `src/app.rs::run` iterates the supplied `files` and opens each local PDF in a tab | Verify multiple files and mixed valid/unsupported paths from the desktop launcher |
+| Tabbed documents | IMPLEMENTADO | `src/document_tabs.rs`, `src/document_actions.rs`, `src/window.rs` resolve the active controller for shared actions and use one shared print handler | Verify close, reopen, print and sidebar behavior across several live tabs |
+| Reorder tabs and close correct document | IMPLEMENTADO | `src/document_tabs.rs` keys tab metadata and controllers by stable notebook page identity | Exercise drag reorder followed by close and restore in the GUI |
 | Page navigation and page-number entry | IMPLEMENTADO | `src/navigation.rs`, `src/window.rs` | GUI boundary tests and invalid input handling |
 | Zoom in/out and custom zoom value | IMPLEMENTADO | `src/navigation.rs`, `src/window.rs` | High-DPI and rapid zoom regression tests |
 | Fit width / fit page | IMPLEMENTADO | `src/layout.rs`, `src/navigation.rs` | Mixed page sizes and viewport changes |
@@ -38,11 +38,11 @@
 | Capability | gpdfview status | Evidence in gpdfview | Remaining work |
 |---|---|---|---|
 | Search text in current page | IMPLEMENTADO | `src/engine.rs::find_text_rectangles_in_page` | Current UI actually performs whole-document search; make wording precise |
-| Search across full document | PARCIAL | `src/engine.rs::find_text_rectangles_in_document`, `src/rendering.rs` | Synchronous all-page scan; async incremental results, cancellation, progress and stress tests |
+| Search across full document | PARCIAL | `src/engine.rs::find_text_rectangles_in_document_cancellable`, `src/rendering.rs` worker and generation handling | Search runs off the GTK thread and obsolete requests cancel; incremental results, progress, stress tests and result limits remain |
 | Navigate next/previous search result | IMPLEMENTADO | `src/rendering.rs`, `src/app.rs`, `src/viewer_state.rs` | Cross-tab focus and stale query cancellation |
 | Highlight search results | IMPLEMENTADO | `src/viewer_state.rs`, `src/window.rs` | Visual tests for multiple matches and page changes |
-| Thumbnail page navigator | PARCIAL | `src/sidebar.rs`, `src/engine.rs::render_page_thumbnail`, separate 24 MiB cache | Render is synchronous; only a limited window of pages is built; virtualize and load asynchronously |
-| PDF outline/bookmarks | PARCIAL | `src/engine.rs::document_outline`, `src/sidebar.rs` | Only Go-To destinations become navigable entries; async loading and nested/edge-case tests |
+| Thumbnail page navigator | PARCIAL | `src/sidebar.rs` bounded thumbnail workers and `src/engine.rs::render_page_thumbnail_cancellable`, separate 24 MiB cache | Only a moving window of pages is instantiated; consider full-list virtualization and verify large PDFs |
+| PDF outline/bookmarks | PARCIAL | `src/engine.rs::document_outline_cancellable`, `src/sidebar.rs` asynchronous generation-aware loading | Only Go-To destinations become navigable; nested/edge-case behavior still needs verification |
 | Recent documents | IMPLEMENTADO | `src/session.rs`, `src/sidebar.rs` | Error handling, eviction tests and inaccessible-file UX |
 | Application favorites | IMPLEMENTADO | `src/session.rs`, `src/sidebar.rs` | Verify add/remove/duplicate handling with active-tab routing |
 | User page bookmarks | IMPLEMENTADO | `src/session.rs`, `src/sidebar.rs` | Verify persistence and navigation across multiple tabs |
@@ -75,9 +75,9 @@
 | Separate thumbnail cache | IMPLEMENTADO | `src/sidebar.rs` (24 MiB cap) | Async generation and virtualization |
 | Prefetch adjacent pages | IMPLEMENTADO | `src/engine.rs` pending/prefetch queue | Tune with measurement; prevent wasted work under rapid navigation |
 | Poppler concurrency contract | PARCIAL | `src/poppler_lock.rs`, `src/engine.rs` | Renderer, search, thumbnail, outline and properties operations hold the global lock while using Poppler objects; review all remaining helper paths and document destruction/ownership |
-| Search/thumbnail/outline not blocking GTK | COM PROBLEMAS | Synchronous call paths in `src/rendering.rs` and `src/sidebar.rs` | Move expensive work to cancellable workers |
-| Robust persistence and surfaced I/O errors | COM PROBLEMAS | Silent `let _ = fs::write(...)` in `src/session.rs` | Atomic writes, schema version, error telemetry and recovery tests |
-| Print scaling behavior | COM PROBLEMAS | Scale is applied while creating fallback PDF and again in CUPS options | Confirm and remove double scaling |
+| Search/thumbnail/outline not blocking GTK | PARCIAL | `src/rendering.rs`, `src/sidebar.rs` use workers, generation checks and bounded thumbnail concurrency | Add incremental search/progress and stress-test cancellation and worker pressure |
+| Robust persistence and surfaced I/O errors | PARCIAL | `src/session.rs::persist_session_file` uses temporary files, sync, atomic rename and logs failures | Surface save failures to the UI; add schema versioning and recovery tests |
+| Print scaling behavior | PARCIAL | `src/printing.rs` applies scale to direct CUPS submission; fallback PDF embeds the scale and resets CUPS scaling to 100% | Verify orientation, scale and geometry on supported CUPS/IPP backends |
 | Benchmark first-visible-page latency and app RSS | COM PROBLEMAS | `scripts/benchmark.sh` samples `timeout` wrapper after fixed sleep | Replace harness; invalidate old TSV as a comparable baseline |
 | PDF password prompt | AUSENTE | Loading paths pass no password to `Document::from_file` | Implement secure password flow if required |
 | Handling malformed PDFs and resource limits | PARCIAL | Some errors are returned, but comprehensive hostile-file/resource tests are absent | Fuzz/safety tests, limits and robust error UX |

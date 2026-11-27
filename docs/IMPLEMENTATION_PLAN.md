@@ -182,7 +182,7 @@ The block numbers remain those from the project owner's directive. The execution
 
 ## Current blockers to track from the audit
 
-See [`PROJECT_AUDIT.md`](PROJECT_AUDIT.md) for detailed code evidence. The immediate blockers are: active-tab command routing, tab reorder metadata, GApplication multi-file open, Poppler threading policy, synchronous UI work, print fallback scaling, silent persistence errors, invalid benchmark methodology and Poppler/license compatibility review.
+The original blockers in [`PROJECT_AUDIT.md`](PROJECT_AUDIT.md) describe its 2026-11-03 ZIP and are historical. Current status is tracked in [`FEATURE_PARITY.md`](FEATURE_PARITY.md). Remaining high-priority work includes runtime tab and document validation, incremental search feedback and limits, a full Poppler ownership review, CUPS/IPP print verification, surfaced persistence failures, replacement benchmark methodology, and license compatibility review.
 
 ## UI parity follow-up — completed through source review
 
