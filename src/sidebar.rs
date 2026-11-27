@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use crate::app::ViewerController;
 use crate::cache::LruCache;
-use crate::document_actions::open_document_in_new_tab;
+use crate::document_actions::{open_document_in_new_tab, OpenDocumentContext};
 use crate::document_tabs::DocumentTabManager;
 use crate::session::{
     is_favorite_document, load_document_bookmarks, load_favorite_documents, load_recent_documents,
@@ -71,14 +71,8 @@ struct ThumbnailPixels {
 
 #[derive(Clone)]
 struct SidebarOpenContext {
-    app: adw::Application,
-    window: adw::ApplicationWindow,
-    tab_manager: Rc<RefCell<DocumentTabManager>>,
-    title_label: gtk4::Label,
+    open_document: OpenDocumentContext,
     status: gtk4::Label,
-    print_button: gtk4::Button,
-    toolbar_host: gtk4::Box,
-    search_host: gtk4::Box,
 }
 
 fn page_range_for_sidebar(page_count: i32, current_page: i32) -> Vec<i32> {
@@ -122,16 +116,7 @@ fn append_sidebar_entry(
     let row_path = path.clone();
     let row_context = context.clone();
     row.connect_activate(move |_| {
-        if let Err(error) = open_document_in_new_tab(
-            &row_context.app,
-            &row_context.window,
-            row_context.tab_manager.clone(),
-            row_path.clone(),
-            row_context.title_label.clone(),
-            row_context.print_button.clone(),
-            row_context.toolbar_host.clone(),
-            row_context.search_host.clone(),
-        ) {
+        if let Err(error) = open_document_in_new_tab(&row_context.open_document, row_path.clone()) {
             row_context
                 .status
                 .set_text(&format!("Não foi possível reabrir o PDF: {error}"));
@@ -840,14 +825,16 @@ pub fn build_sidebar(
     search_host: gtk4::Box,
 ) -> (gtk4::Box, gtk4::Box) {
     let open_context = SidebarOpenContext {
-        app: app.clone(),
-        window: window.clone(),
-        tab_manager: tab_manager.clone(),
-        title_label: title_label.clone(),
+        open_document: OpenDocumentContext {
+            app: app.clone(),
+            window: window.clone(),
+            tab_manager: tab_manager.clone(),
+            title_label: title_label.clone(),
+            print_button: print_button.clone(),
+            toolbar_host,
+            search_host,
+        },
         status: controller.status.clone(),
-        print_button: print_button.clone(),
-        toolbar_host,
-        search_host,
     };
 
     let sidebar_root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);

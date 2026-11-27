@@ -1,5 +1,6 @@
 use crate::cache::LruCache;
 use crate::dialogs::build_document_properties_dialog;
+use crate::document_actions::OpenDocumentContext;
 use crate::engine::{PdfRenderer, RenderError, RenderedPage};
 use crate::keyboard::KeyAction;
 use crate::navigation::{
@@ -1029,14 +1030,16 @@ pub fn run() {
             }
 
             if let Err(error) = crate::document_actions::open_document_in_new_tab(
-                &controller.app,
-                &controller.window,
-                tab_manager.clone(),
+                &OpenDocumentContext {
+                    app: controller.app.clone(),
+                    window: controller.window.clone(),
+                    tab_manager: tab_manager.clone(),
+                    title_label: controller.title.clone(),
+                    print_button: controller.print_button.clone(),
+                    toolbar_host: controller.toolbar_host.clone(),
+                    search_host: controller.search_host.clone(),
+                },
                 path,
-                controller.title.clone(),
-                controller.print_button.clone(),
-                controller.toolbar_host.clone(),
-                controller.search_host.clone(),
             ) {
                 controller
                     .status

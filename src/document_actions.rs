@@ -32,15 +32,20 @@ pub(crate) fn selected_pdf_paths(model: &gtk4::gio::ListModel) -> Vec<PathBuf> {
     selected
 }
 
+#[derive(Clone)]
+pub(crate) struct OpenDocumentContext {
+    pub app: adw::Application,
+    pub window: adw::ApplicationWindow,
+    pub tab_manager: Rc<RefCell<DocumentTabManager>>,
+    pub title_label: gtk4::Label,
+    pub print_button: gtk4::Button,
+    pub toolbar_host: gtk4::Box,
+    pub search_host: gtk4::Box,
+}
+
 pub(crate) fn open_document_in_new_tab(
-    app: &adw::Application,
-    window: &adw::ApplicationWindow,
-    tab_manager: Rc<RefCell<DocumentTabManager>>,
+    context: &OpenDocumentContext,
     path: PathBuf,
-    title_label: gtk4::Label,
-    print_button: gtk4::Button,
-    toolbar_host: gtk4::Box,
-    search_host: gtk4::Box,
 ) -> Result<Rc<ViewerController>, String> {
     let filename = path
         .file_name()
@@ -49,21 +54,24 @@ pub(crate) fn open_document_in_new_tab(
         .to_string();
     let (renderer, printer) = new_worker_pair()?;
     let new_controller = create_document_controller(DocumentControllerParams {
-        app: app.clone(),
-        window,
+        app: context.app.clone(),
+        window: &context.window,
         renderer,
         printer,
-        tab_manager: tab_manager.clone(),
+        tab_manager: context.tab_manager.clone(),
         initial_path: Some(path.clone()),
-        title: title_label,
-        print_button,
-        toolbar_host,
-        search_host,
+        title: context.title_label.clone(),
+        print_button: context.print_button.clone(),
+        toolbar_host: context.toolbar_host.clone(),
+        search_host: context.search_host.clone(),
     });
-    tab_manager
-        .borrow()
-        .add_tab_with_path(&new_controller.root, &filename, Some(path.clone()));
-    tab_manager
+    context.tab_manager.borrow().add_tab_with_path(
+        &new_controller.root,
+        &filename,
+        Some(path.clone()),
+    );
+    context
+        .tab_manager
         .borrow()
         .register_controller(&new_controller.root, new_controller.clone());
     remember_recent_document(&path);
@@ -72,13 +80,9 @@ pub(crate) fn open_document_in_new_tab(
 }
 
 pub(crate) fn show_open_dialog(
-    app: adw::Application,
-    window: adw::ApplicationWindow,
-    tab_manager: Rc<RefCell<DocumentTabManager>>,
+    context: OpenDocumentContext,
     controller: Rc<ViewerController>,
     last_directory: Option<PathBuf>,
-    toolbar_host: gtk4::Box,
-    search_host: gtk4::Box,
 ) {
     let dialog = gtk4::FileDialog::builder().title("Abrir PDF").build();
     let filter = gtk4::FileFilter::new();
@@ -95,9 +99,7 @@ pub(crate) fn show_open_dialog(
         dialog.set_initial_folder(Some(&folder));
     }
 
-    let dialog_window = window.clone();
-    let dialog_parent = dialog_window.clone();
-    let dialog_app = app.clone();
+    let dialog_parent = context.window.clone();
     dialog.open_multiple(
         Some(&dialog_parent),
         None::<&gtk4::gio::Cancellable>,
@@ -114,16 +116,7 @@ pub(crate) fn show_open_dialog(
                     if let Some(parent) = path.parent() {
                         remember_last_directory(parent);
                     }
-                    if let Err(error) = open_document_in_new_tab(
-                        &dialog_app,
-                        &dialog_window,
-                        tab_manager.clone(),
-                        path.clone(),
-                        controller.title.clone(),
-                        controller.print_button.clone(),
-                        toolbar_host.clone(),
-                        search_host.clone(),
-                    ) {
+                    if let Err(error) = open_document_in_new_tab(&context, path.clone()) {
                         controller
                             .status
                             .set_text(&format!("Não foi possível abrir o PDF: {error}"));

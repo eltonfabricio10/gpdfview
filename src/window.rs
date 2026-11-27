@@ -12,7 +12,7 @@ use libadwaita as adw;
 
 use crate::app::ViewerController;
 use crate::cache::LruCache;
-use crate::document_actions::{open_document_in_new_tab, show_open_dialog};
+use crate::document_actions::{open_document_in_new_tab, show_open_dialog, OpenDocumentContext};
 use crate::document_tabs::DocumentTabManager;
 use crate::keyboard::KeyAction;
 use crate::layout::{
@@ -313,13 +313,17 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         menu_shortcuts.get("open_file").map(String::as_str),
         move || {
             show_open_dialog(
-                menu_open_app.clone(),
-                menu_open_window.clone(),
-                menu_open_tab_manager.clone(),
+                OpenDocumentContext {
+                    app: menu_open_app.clone(),
+                    window: menu_open_window.clone(),
+                    tab_manager: menu_open_tab_manager.clone(),
+                    title_label: menu_open_controller.title.clone(),
+                    print_button: menu_open_controller.print_button.clone(),
+                    toolbar_host: menu_open_controller.toolbar_host.clone(),
+                    search_host: menu_open_controller.search_host.clone(),
+                },
                 menu_open_controller.clone(),
                 menu_last_directory.clone(),
-                menu_open_controller.toolbar_host.clone(),
-                menu_open_controller.search_host.clone(),
             );
         },
     );
@@ -501,14 +505,16 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         let path = { restore_tab_manager.borrow().restore_last_closed_path() };
         if let Some(path) = path {
             match open_document_in_new_tab(
-                &restore_tab_app,
-                &restore_tab_window,
-                restore_tab_manager.clone(),
+                &OpenDocumentContext {
+                    app: restore_tab_app.clone(),
+                    window: restore_tab_window.clone(),
+                    tab_manager: restore_tab_manager.clone(),
+                    title_label: restore_tab_title.clone(),
+                    print_button: restore_tab_button.clone(),
+                    toolbar_host: restore_tab_controller.toolbar_host.clone(),
+                    search_host: restore_tab_controller.search_host.clone(),
+                },
                 path,
-                restore_tab_title.clone(),
-                restore_tab_button.clone(),
-                restore_tab_controller.toolbar_host.clone(),
-                restore_tab_controller.search_host.clone(),
             ) {
                 Ok(_) => restore_tab_controller
                     .status
@@ -757,13 +763,17 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         let last_directory = last_directory.clone();
         move |_| {
             show_open_dialog(
-                open_app.clone(),
-                open_window.clone(),
-                open_tab_manager.clone(),
+                OpenDocumentContext {
+                    app: open_app.clone(),
+                    window: open_window.clone(),
+                    tab_manager: open_tab_manager.clone(),
+                    title_label: open_controller.title.clone(),
+                    print_button: open_controller.print_button.clone(),
+                    toolbar_host: open_controller.toolbar_host.clone(),
+                    search_host: open_controller.search_host.clone(),
+                },
                 open_controller.clone(),
                 last_directory.clone(),
-                open_controller.toolbar_host.clone(),
-                open_controller.search_host.clone(),
             );
         }
     });
@@ -1327,13 +1337,17 @@ pub(crate) fn create_document_controller(
             crate::keyboard::resolve_key_action_with_settings(&key_name, state.bits(), &settings);
         if let Some(KeyAction::OpenFile) = action {
             show_open_dialog(
-                open_app.clone(),
-                open_window.clone(),
-                open_tab_manager.clone(),
+                OpenDocumentContext {
+                    app: open_app.clone(),
+                    window: open_window.clone(),
+                    tab_manager: open_tab_manager.clone(),
+                    title_label: keyboard_controller.title.clone(),
+                    print_button: keyboard_controller.print_button.clone(),
+                    toolbar_host: keyboard_controller.toolbar_host.clone(),
+                    search_host: keyboard_controller.search_host.clone(),
+                },
                 keyboard_controller.clone(),
                 last_directory.clone(),
-                keyboard_controller.toolbar_host.clone(),
-                keyboard_controller.search_host.clone(),
             );
             return gtk::glib::Propagation::Stop;
         }
