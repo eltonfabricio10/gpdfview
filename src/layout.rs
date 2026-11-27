@@ -49,6 +49,22 @@ pub(crate) fn continuous_page_top(page_index: i32, page_height_points: f64, scal
         + f64::from(page_index.max(0)) * continuous_page_stride(page_height_points, scale)
 }
 
+pub(crate) fn continuous_page_at_offset(
+    scroll_offset: f64,
+    viewport_height: f64,
+    page_height_points: f64,
+    scale: f64,
+    page_count: i32,
+) -> i32 {
+    if page_count <= 0 {
+        return 0;
+    }
+    let viewport_center = scroll_offset.max(0.0) + viewport_height.max(0.0) * 0.5;
+    let offset = (viewport_center - CONTINUOUS_TOP_MARGIN).max(0.0);
+    let stride = continuous_page_stride(page_height_points, scale);
+    ((offset / stride).floor() as i32).clamp(0, page_count - 1)
+}
+
 pub(crate) fn continuous_content_height(page_height_px: i32, page_count: i32) -> i32 {
     let page_count = page_count.max(1);
     let page_height = f64::from(page_height_px.max(1));
@@ -57,4 +73,18 @@ pub(crate) fn continuous_content_height(page_height_px: i32, page_count: i32) ->
         + f64::from(page_count.saturating_sub(1)) * CONTINUOUS_PAGE_GAP
         + CONTINUOUS_BOTTOM_MARGIN;
     total.ceil() as i32
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{continuous_page_at_offset, CONTINUOUS_TOP_MARGIN};
+
+    #[test]
+    fn continuous_page_uses_viewport_center_for_selection() {
+        assert_eq!(continuous_page_at_offset(0.0, 300.0, 600.0, 1.0, 4), 0);
+        assert_eq!(
+            continuous_page_at_offset(CONTINUOUS_TOP_MARGIN + 500.0, 300.0, 600.0, 1.0, 4,),
+            1
+        );
+    }
 }

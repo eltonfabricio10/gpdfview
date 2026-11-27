@@ -16,8 +16,8 @@ use crate::document_actions::{open_document_in_new_tab, show_open_dialog, OpenDo
 use crate::document_tabs::DocumentTabManager;
 use crate::keyboard::KeyAction;
 use crate::layout::{
-    cairo_search_highlight_rects, continuous_page_stride, continuous_page_top, CONTINUOUS_PAGE_GAP,
-    CONTINUOUS_SIDE_MARGIN, CONTINUOUS_TOP_MARGIN,
+    cairo_search_highlight_rects, continuous_page_at_offset, continuous_page_top,
+    CONTINUOUS_PAGE_GAP, CONTINUOUS_SIDE_MARGIN, CONTINUOUS_TOP_MARGIN,
 };
 use crate::printing::PrintService;
 use crate::session::{
@@ -1314,9 +1314,13 @@ pub(crate) fn create_document_controller(
                 .as_ref()
                 .map(|surface| f64::from(surface.height()) / scale.max(0.1))
                 .unwrap_or(page_height_points);
-            let stride = continuous_page_stride(fallback_height_points, scale);
-            let offset = (adjustment.value() - CONTINUOUS_TOP_MARGIN).max(0.0);
-            let target_page = ((offset / stride).floor() as i32).clamp(0, page_count - 1);
+            let target_page = continuous_page_at_offset(
+                adjustment.value(),
+                adjustment.page_size(),
+                fallback_height_points,
+                scale,
+                page_count,
+            );
             if target_page != current_page {
                 continuous_sync_controller.navigate_to(target_page);
             }
