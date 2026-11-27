@@ -275,24 +275,34 @@ where
     }
 
     let document = load_document(path)?;
-    let _guard = crate::poppler_lock::lock()?;
-    let mut matches = Vec::new();
-    let page_count = document.n_pages();
-    for page_index in 0..page_count {
-        if is_cancelled() {
-            return Ok(Vec::new());
-        }
-        let Some(page) = document.page(page_index) else {
-            continue;
+    let result = (|| {
+        let page_count = {
+            let _guard = crate::poppler_lock::lock()?;
+            document.n_pages()
         };
-        for rect in page.find_text_with_options(trimmed, options) {
-            matches.push(DocumentTextMatch {
-                page_index,
-                rect: (rect.x1(), rect.y1(), rect.x2(), rect.y2()),
-            });
+        let mut matches = Vec::new();
+        for page_index in 0..page_count {
+            if is_cancelled() {
+                return Ok(matches);
+            }
+            let guard = crate::poppler_lock::lock()?;
+            if let Some(page) = document.page(page_index) {
+                for rect in page.find_text_with_options(trimmed, options) {
+                    matches.push(DocumentTextMatch {
+                        page_index,
+                        rect: (rect.x1(), rect.y1(), rect.x2(), rect.y2()),
+                    });
+                }
+                drop(page);
+            }
+            drop(guard);
         }
-    }
-    Ok(matches)
+        Ok(matches)
+    })();
+    let guard = crate::poppler_lock::lock()?;
+    drop(document);
+    drop(guard);
+    result
 }
 
 #[derive(Default)]
