@@ -87,6 +87,10 @@ pub(crate) fn toggle_presentation_mode(controller: &ViewerController) {
 }
 
 pub(crate) fn navigate_to(controller: &ViewerController, page_index: i32) {
+    navigate_to_with_history(controller, page_index, true);
+}
+
+fn navigate_to_with_history(controller: &ViewerController, page_index: i32, record_history: bool) {
     let (path, page_index, scale, rotation) = {
         let mut state = controller.state.borrow_mut();
         if state.page_count == 0 {
@@ -96,6 +100,14 @@ pub(crate) fn navigate_to(controller: &ViewerController, page_index: i32) {
         let current_scale = state.scale;
         let current_rotation = state.rotation;
         let target = page_index.clamp(0, state.page_count - 1);
+        if target != state.page_index && record_history {
+            let current_page = state.page_index;
+            if state.page_history.len() == 128 {
+                state.page_history.remove(0);
+            }
+            state.page_history.push(current_page);
+            state.forward_history.clear();
+        }
         let render_context =
             apply_render_request(&mut state, path, target, current_scale, current_rotation);
         match render_context {
@@ -104,6 +116,38 @@ pub(crate) fn navigate_to(controller: &ViewerController, page_index: i32) {
         }
     };
     controller.request_render(path, page_index, scale, rotation);
+}
+
+pub(crate) fn go_page_back(controller: &ViewerController) {
+    let target = {
+        let mut state = controller.state.borrow_mut();
+        let Some(target) = state.page_history.pop() else {
+            return;
+        };
+        let current_page = state.page_index;
+        if state.forward_history.len() == 128 {
+            state.forward_history.remove(0);
+        }
+        state.forward_history.push(current_page);
+        target
+    };
+    navigate_to_with_history(controller, target, false);
+}
+
+pub(crate) fn go_page_forward(controller: &ViewerController) {
+    let target = {
+        let mut state = controller.state.borrow_mut();
+        let Some(target) = state.forward_history.pop() else {
+            return;
+        };
+        let current_page = state.page_index;
+        if state.page_history.len() == 128 {
+            state.page_history.remove(0);
+        }
+        state.page_history.push(current_page);
+        target
+    };
+    navigate_to_with_history(controller, target, false);
 }
 
 pub(crate) fn change_zoom(controller: &ViewerController, delta: f64) {

@@ -121,6 +121,8 @@ impl ViewerController {
         state.path = None;
         state.page_index = 0;
         state.page_count = 0;
+        state.page_history.clear();
+        state.forward_history.clear();
         state.page_width_points = 0.0;
         state.page_height_points = 0.0;
         state.search_query.clear();
@@ -152,6 +154,17 @@ impl ViewerController {
 
     pub(crate) fn handle_key_action(&self, action: KeyAction) {
         handle_key_action(self, action);
+        self.notify_state_changed();
+    }
+
+    pub(crate) fn go_page_back(&self) {
+        crate::navigation::go_page_back(self);
+        self.notify_state_changed();
+    }
+
+    pub(crate) fn go_page_forward(&self) {
+        crate::navigation::go_page_forward(self);
+        self.notify_state_changed();
     }
 
     pub(crate) fn toggle_presentation_mode(&self) {
@@ -195,6 +208,8 @@ impl ViewerController {
             state.path = Some(path.clone());
             state.page_index = 0;
             state.page_count = 0;
+            state.page_history.clear();
+            state.forward_history.clear();
             state.page_width_points = 0.0;
             state.page_height_points = 0.0;
             state.scale = DEFAULT_ZOOM;

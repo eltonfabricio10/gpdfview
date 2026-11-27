@@ -83,6 +83,8 @@ pub struct ViewerState {
     pub path: Option<PathBuf>,
     pub page_index: i32,
     pub page_count: i32,
+    pub page_history: Vec<i32>,
+    pub forward_history: Vec<i32>,
     pub page_width_points: f64,
     pub page_height_points: f64,
     pub scale: f64,

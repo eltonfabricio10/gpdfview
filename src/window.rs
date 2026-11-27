@@ -298,6 +298,32 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     let edit_prev_match_item = append_menu_item(&edit_menu_box, "Resultado anterior", move || {
         active_controller(&edit_prev_manager, &edit_prev_fallback).search_previous_match();
     });
+    let first_page_manager = tab_manager.clone();
+    let first_page_fallback = initial.clone();
+    let first_page_item = append_menu_item(&edit_menu_box, "Primeira página", move || {
+        active_controller(&first_page_manager, &first_page_fallback)
+            .handle_key_action(KeyAction::FirstPage);
+    });
+    let last_page_manager = tab_manager.clone();
+    let last_page_fallback = initial.clone();
+    let last_page_item = append_menu_item(&edit_menu_box, "Última página", move || {
+        active_controller(&last_page_manager, &last_page_fallback)
+            .handle_key_action(KeyAction::LastPage);
+    });
+    let history_back_manager = tab_manager.clone();
+    let history_back_fallback = initial.clone();
+    let history_back_item = append_menu_item(&edit_menu_box, "Voltar para página", move || {
+        active_controller(&history_back_manager, &history_back_fallback).go_page_back();
+    });
+    let history_forward_manager = tab_manager.clone();
+    let history_forward_fallback = initial.clone();
+    let history_forward_item =
+        append_menu_item(&edit_menu_box, "Avançar para página", move || {
+            active_controller(&history_forward_manager, &history_forward_fallback)
+                .go_page_forward();
+        });
+    history_back_item.set_sensitive(false);
+    history_forward_item.set_sensitive(false);
 
     let menu_sidebar = sidebar.clone();
     let menu_sidebar_controller = initial.clone();
@@ -461,6 +487,8 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         file_properties_item,
         edit_next_match_item,
         edit_prev_match_item,
+        history_back_item.clone(),
+        history_forward_item.clone(),
         view_presentation_item,
         view_split_horizontal_item,
         view_split_vertical_item,
@@ -470,6 +498,12 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         page_bookmark_toggle_item,
     ]);
     let active_toolbar_host = toolbar_host.clone();
+    let observed_history_controllers =
+        Rc::new(RefCell::new(std::collections::HashSet::<usize>::new()));
+    let weak_history_back = history_back_item.downgrade();
+    let weak_history_forward = history_forward_item.downgrade();
+    let weak_first_page = first_page_item.downgrade();
+    let weak_last_page = last_page_item.downgrade();
     tab_manager
         .borrow()
         .subscribe_active_controller(move |controller| {
@@ -480,6 +514,49 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
             let has_document = controller.state.borrow().path.is_some();
             for item in doc_sensitive_items.iter() {
                 item.set_sensitive(has_document);
+            }
+            let controller_id = Rc::as_ptr(&controller.state) as usize;
+            if observed_history_controllers
+                .borrow_mut()
+                .insert(controller_id)
+            {
+                let state = Rc::downgrade(&controller.state);
+                let back_item = weak_history_back.clone();
+                let forward_item = weak_history_forward.clone();
+                let first_item = weak_first_page.clone();
+                let last_item = weak_last_page.clone();
+                controller.subscribe_state_changes(move || {
+                    let Some(state) = state.upgrade() else {
+                        return;
+                    };
+                    let state = state.borrow();
+                    if let Some(item) = back_item.upgrade() {
+                        item.set_sensitive(!state.page_history.is_empty());
+                    }
+                    if let Some(item) = forward_item.upgrade() {
+                        item.set_sensitive(!state.forward_history.is_empty());
+                    }
+                    if let Some(item) = first_item.upgrade() {
+                        item.set_sensitive(state.path.is_some() && state.page_count > 0);
+                    }
+                    if let Some(item) = last_item.upgrade() {
+                        item.set_sensitive(state.path.is_some() && state.page_count > 0);
+                    }
+                });
+            }
+            let state = controller.state.borrow();
+            if let Some(item) = weak_history_back.upgrade() {
+                item.set_sensitive(has_document && !state.page_history.is_empty());
+            }
+            if let Some(item) = weak_history_forward.upgrade() {
+                item.set_sensitive(has_document && !state.forward_history.is_empty());
+            }
+            let has_pages = has_document && state.page_count > 0;
+            if let Some(item) = weak_first_page.upgrade() {
+                item.set_sensitive(has_pages);
+            }
+            if let Some(item) = weak_last_page.upgrade() {
+                item.set_sensitive(has_pages);
             }
         });
 
