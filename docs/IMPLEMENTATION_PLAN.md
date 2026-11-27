@@ -239,5 +239,6 @@ This follow-up implements the smaller UI improvements identified from `/home/elt
 | 59 | Use a dedicated empty-state page indicator | This follow-up |
 | 60 | Keep the thumbnail empty-state message fully visible | This follow-up |
 | 61 | Sync layout button with the restored document mode | This follow-up |
+| 62 | Apply the configured default layout when opening every PDF | This follow-up |
 
 The runtime screenshot comparison remains open. This environment did not provide a controlled gpdfview window for capture during this pass, so `docs/UI_REFERENCE.md` records source-level findings and the exact visual checks still needed.
