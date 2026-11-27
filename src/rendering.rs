@@ -202,13 +202,15 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
         .zoom_button
         .set_label(&format!("{:.0}%", controller.state.borrow().scale * 100.0));
     controller.status.set_text(&format!(
-        "Página {} de {} · {} × {} pt · renderizada em {:.0} ms · cache {} MiB",
+        "Página {} de {} · {} × {} pt · renderizada em {:.0} ms · cache {} MiB · hits {} · evictions {}",
         page.page_index + 1,
         page.page_count,
         page.page_width_points.round(),
         page.page_height_points.round(),
         render_time.map_or(0.0, |time| time.as_secs_f64() * 1000.0),
-        controller.cache.borrow().bytes_used() / (1024 * 1024)
+        controller.cache.borrow().bytes_used() / (1024 * 1024),
+        controller.cache.borrow().stats().hits,
+        controller.cache.borrow().stats().evictions
     ));
     let path = controller.state.borrow().path.clone();
     let scale = controller.state.borrow().scale;
