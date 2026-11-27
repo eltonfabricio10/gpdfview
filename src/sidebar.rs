@@ -75,6 +75,7 @@ struct SidebarOpenContext {
     window: adw::ApplicationWindow,
     tab_manager: Rc<RefCell<DocumentTabManager>>,
     title_label: gtk4::Label,
+    status: gtk4::Label,
     print_button: gtk4::Button,
     toolbar_host: gtk4::Box,
     search_host: gtk4::Box,
@@ -125,7 +126,7 @@ fn append_sidebar_entry(
     let row_path = path.clone();
     let row_context = context.clone();
     row.connect_activate(move |_| {
-        let _ = open_document_in_new_tab(
+        if let Err(error) = open_document_in_new_tab(
             &row_context.app,
             &row_context.window,
             row_context.tab_manager.clone(),
@@ -134,7 +135,11 @@ fn append_sidebar_entry(
             row_context.print_button.clone(),
             row_context.toolbar_host.clone(),
             row_context.search_host.clone(),
-        );
+        ) {
+            row_context
+                .status
+                .set_text(&format!("Não foi possível reabrir o PDF: {error}"));
+        }
     });
 
     list.append(&row);
@@ -832,6 +837,7 @@ pub fn build_sidebar(
         window: window.clone(),
         tab_manager: tab_manager.clone(),
         title_label: title_label.clone(),
+        status: controller.status.clone(),
         print_button: print_button.clone(),
         toolbar_host,
         search_host,

@@ -485,7 +485,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     let restore_tab_item = append_menu_item(&tabs_menu_box, "Restaurar última aba", move || {
         let path = { restore_tab_manager.borrow().restore_last_closed_path() };
         if let Some(path) = path {
-            if open_document_in_new_tab(
+            match open_document_in_new_tab(
                 &restore_tab_app,
                 &restore_tab_window,
                 restore_tab_manager.clone(),
@@ -494,12 +494,13 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
                 restore_tab_button.clone(),
                 restore_tab_controller.toolbar_host.clone(),
                 restore_tab_controller.search_host.clone(),
-            )
-            .is_some()
-            {
-                restore_tab_controller
+            ) {
+                Ok(_) => restore_tab_controller
                     .status
-                    .set_text("Última aba fechada restaurada.");
+                    .set_text("Última aba fechada restaurada."),
+                Err(error) => restore_tab_controller
+                    .status
+                    .set_text(&format!("Não foi possível restaurar a aba: {error}")),
             }
         } else {
             restore_tab_controller

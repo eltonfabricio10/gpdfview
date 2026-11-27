@@ -1010,7 +1010,7 @@ pub fn run() {
                 continue;
             }
 
-            crate::document_actions::open_document_in_new_tab(
+            if let Err(error) = crate::document_actions::open_document_in_new_tab(
                 &controller.app,
                 &controller.window,
                 tab_manager.clone(),
@@ -1019,7 +1019,11 @@ pub fn run() {
                 controller.print_button.clone(),
                 controller.toolbar_host.clone(),
                 controller.search_host.clone(),
-            );
+            ) {
+                controller
+                    .status
+                    .set_text(&format!("Não foi possível abrir o PDF: {error}"));
+            }
         }
     });
     app.run();

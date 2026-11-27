@@ -41,19 +41,13 @@ pub(crate) fn open_document_in_new_tab(
     print_button: gtk4::Button,
     toolbar_host: gtk4::Box,
     search_host: gtk4::Box,
-) -> Option<Rc<ViewerController>> {
+) -> Result<Rc<ViewerController>, String> {
     let filename = path
         .file_name()
         .and_then(|name| name.to_str())
         .unwrap_or("Document")
         .to_string();
-    let (renderer, printer) = match new_worker_pair() {
-        Ok(pair) => pair,
-        Err(error) => {
-            eprintln!("{error}");
-            return None;
-        }
-    };
+    let (renderer, printer) = new_worker_pair()?;
     let new_controller = create_document_controller(DocumentControllerParams {
         app: app.clone(),
         window,
@@ -74,7 +68,7 @@ pub(crate) fn open_document_in_new_tab(
         .register_controller(&new_controller.root, new_controller.clone());
     remember_recent_document(&path);
     new_controller.open_document(path);
-    Some(new_controller)
+    Ok(new_controller)
 }
 
 pub(crate) fn show_open_dialog(
@@ -120,7 +114,7 @@ pub(crate) fn show_open_dialog(
                     if let Some(parent) = path.parent() {
                         remember_last_directory(parent);
                     }
-                    if let Some(new_controller) = open_document_in_new_tab(
+                    if let Err(error) = open_document_in_new_tab(
                         &dialog_app,
                         &dialog_window,
                         tab_manager.clone(),
@@ -130,7 +124,9 @@ pub(crate) fn show_open_dialog(
                         toolbar_host.clone(),
                         search_host.clone(),
                     ) {
-                        let _ = new_controller;
+                        controller
+                            .status
+                            .set_text(&format!("Não foi possível abrir o PDF: {error}"));
                     }
                 }
             }
