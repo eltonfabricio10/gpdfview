@@ -78,23 +78,25 @@ fn append_menu_item_with_shortcut<F>(
 where
     F: Fn() + 'static,
 {
-    let item = gtk::Button::with_label(label);
+    let item = gtk::Button::new();
     item.set_halign(gtk::Align::Fill);
     item.set_hexpand(true);
     item.set_has_frame(false);
     item.add_css_class("flat");
+    let content = gtk::Box::new(gtk::Orientation::Horizontal, 24);
+    content.set_halign(gtk::Align::Fill);
+    content.set_hexpand(true);
+    let title = gtk::Label::new(Some(label));
+    title.set_xalign(0.0);
+    title.set_hexpand(true);
+    content.append(&title);
     if let Some(shortcut) = shortcut.filter(|shortcut| !shortcut.is_empty()) {
-        let content = gtk::Box::new(gtk::Orientation::Horizontal, 24);
-        let title = gtk::Label::new(Some(label));
-        title.set_xalign(0.0);
-        title.set_hexpand(true);
         let key = gtk::Label::new(Some(shortcut));
         key.set_xalign(1.0);
         key.add_css_class("dim-label");
-        content.append(&title);
         content.append(&key);
-        item.set_child(Some(&content));
     }
+    item.set_child(Some(&content));
     item.connect_clicked(move |_| on_click());
     menu_box.append(&item);
     item
