@@ -210,5 +210,6 @@ This follow-up implements the smaller UI improvements identified from `/home/elt
 | 30 | Surface settings-file write errors in the preferences window | This follow-up |
 | 31 | Accept comma and period decimal separators for zoom increments | This follow-up |
 | 32 | Match Meta, Super and Hyper modifiers using their GDK masks | This follow-up |
+| 33 | Localize primary toolbar, dialog and file-picker labels | This follow-up |
 
 The runtime screenshot comparison remains open. This environment did not provide a controlled gpdfview window for capture during this pass, so `docs/UI_REFERENCE.md` records source-level findings and the exact visual checks still needed.

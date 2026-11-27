@@ -70,7 +70,7 @@ pub(crate) fn build_document_properties_dialog(
     properties: &[(String, String)],
 ) -> gtk::Window {
     let dialog = gtk::Window::new();
-    dialog.set_title(Some("Document properties"));
+    dialog.set_title(Some("Propriedades do documento"));
     dialog.set_transient_for(Some(parent));
     dialog.set_modal(true);
     dialog.set_default_size(420, 220);
@@ -99,7 +99,7 @@ pub(crate) fn build_document_properties_dialog(
     }
     content.append(&rows);
 
-    let close_button = gtk::Button::with_label("Close");
+    let close_button = gtk::Button::with_label("Fechar");
     let dialog_for_close = dialog.clone();
     close_button.connect_clicked(move |_| {
         dialog_for_close.close();
@@ -115,7 +115,7 @@ pub(crate) fn build_settings_dialog(
     controller: ViewerController,
 ) -> gtk::Window {
     let dialog = gtk::Window::new();
-    dialog.set_title(Some("Preferences"));
+    dialog.set_title(Some("Preferências"));
     dialog.set_transient_for(Some(parent));
     dialog.set_modal(true);
     dialog.set_default_size(560, 580);

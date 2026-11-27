@@ -158,7 +158,7 @@ impl ViewerController {
         self.next_button.set_sensitive(false);
         self.zoom_button.set_sensitive(false);
         self.page_total.set_text("/ 0");
-        self.status.set_text("Document closed");
+        self.status.set_text("Documento fechado");
         self.area.queue_draw();
     }
 
@@ -166,7 +166,7 @@ impl ViewerController {
         self.clear_document_after_close();
         self.print_button.set_sensitive(false);
         self.title.set_text("gpdfview");
-        self.status.set_text("Open a PDF document to begin");
+        self.status.set_text("Abra um PDF para começar");
     }
 
     pub(crate) fn set_page_spin_value(&self, value: f64) {
@@ -436,7 +436,8 @@ impl ViewerController {
             let state = self.state.borrow();
             let total = state.search_results.len();
             if total == 0 {
-                self.status.set_text("No search matches in this document.");
+                self.status
+                    .set_text("Nenhuma ocorrência encontrada neste documento.");
                 return;
             }
             let normalized_index = index % total;
@@ -490,7 +491,7 @@ impl ViewerController {
 
         let state = self.state.borrow();
         self.status.set_text(&format!(
-            "Match {} of {} in document (page {}).",
+            "Ocorrência {} de {} no documento (página {}).",
             state.search_global_index + 1,
             total,
             target_page + 1,
@@ -517,7 +518,8 @@ impl ViewerController {
     pub(crate) fn search_next_match(&self) {
         let total = self.state.borrow().search_results.len();
         if total == 0 {
-            self.status.set_text("No search matches in this document.");
+            self.status
+                .set_text("Nenhuma ocorrência encontrada neste documento.");
             return;
         }
         let next_index = {
@@ -530,7 +532,8 @@ impl ViewerController {
     pub(crate) fn search_previous_match(&self) {
         let total = self.state.borrow().search_results.len();
         if total == 0 {
-            self.status.set_text("No search matches in this document.");
+            self.status
+                .set_text("Nenhuma ocorrência encontrada neste documento.");
             return;
         }
         let previous_index = {
@@ -546,16 +549,18 @@ impl ViewerController {
 
     pub(crate) fn submit_print_with_options(&self, options: PrintOptions) {
         let Some(path) = self.state.borrow().path.clone() else {
-            self.status.set_text("Open a PDF document before printing.");
+            self.status.set_text("Abra um PDF antes de imprimir.");
             return;
         };
         match self.printer.submit_with_options(path, options) {
             Ok(()) => {
                 self.print_button.set_sensitive(false);
                 self.status
-                    .set_text("Submitting the PDF to the default printer…");
+                    .set_text("Enviando o PDF para a impressora padrão…");
             }
-            Err(error) => self.status.set_text(&format!("Print failed: {error}")),
+            Err(error) => self
+                .status
+                .set_text(&format!("Falha na impressão: {error}")),
         }
     }
 

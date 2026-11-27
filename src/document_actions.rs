@@ -86,9 +86,9 @@ pub(crate) fn show_open_dialog(
     toolbar_host: gtk4::Box,
     search_host: gtk4::Box,
 ) {
-    let dialog = gtk4::FileDialog::builder().title("Open PDF").build();
+    let dialog = gtk4::FileDialog::builder().title("Abrir PDF").build();
     let filter = gtk4::FileFilter::new();
-    filter.set_name(Some("PDF documents"));
+    filter.set_name(Some("Documentos PDF"));
     filter.add_mime_type("application/pdf");
     filter.add_pattern("*.pdf");
     let filters = gtk4::gio::ListStore::new::<gtk4::FileFilter>();
@@ -113,7 +113,7 @@ pub(crate) fn show_open_dialog(
                 if paths.is_empty() {
                     controller
                         .status
-                        .set_text("No PDF files were selected from the picker.");
+                        .set_text("Nenhum arquivo PDF foi selecionado.");
                     return;
                 }
                 for path in paths {
@@ -135,9 +135,9 @@ pub(crate) fn show_open_dialog(
                 }
             }
             Err(error) if error.matches(gtk4::gio::IOErrorEnum::Cancelled) => {}
-            Err(error) => controller
-                .status
-                .set_text(&format!("Could not open file picker: {error}")),
+            Err(error) => controller.status.set_text(&format!(
+                "Não foi possível abrir o seletor de arquivos: {error}"
+            )),
         },
     );
 }

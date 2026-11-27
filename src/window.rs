@@ -174,20 +174,23 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     let title = gtk::Label::new(Some("gpdfview"));
     header.set_title_widget(Some(&title));
 
-    let sidebar_button = action_button("sidebar-show-symbolic", "Toggle document sidebar");
+    let sidebar_button = action_button("sidebar-show-symbolic", "Alternar painel de miniaturas");
     header.pack_start(&sidebar_button);
-    let open_button = action_button("document-open-symbolic", "Open a PDF document");
+    let open_button = action_button("document-open-symbolic", "Abrir um documento PDF");
     header.pack_start(&open_button);
-    let fullscreen_button = action_button("view-fullscreen-symbolic", "Toggle fullscreen");
+    let fullscreen_button = action_button("view-fullscreen-symbolic", "Alternar tela cheia");
     header.pack_end(&fullscreen_button);
-    let presentation_button =
-        action_button("view-presentation-symbolic", "Toggle presentation mode");
+    let presentation_button = action_button(
+        "view-presentation-symbolic",
+        "Alternar modo de apresentação",
+    );
     header.pack_end(&presentation_button);
-    let properties_button = action_button("document-properties-symbolic", "Document properties");
+    let properties_button =
+        action_button("document-properties-symbolic", "Propriedades do documento");
     header.pack_end(&properties_button);
     let print_button = action_button(
         "printer-symbolic",
-        "Send the current PDF to the default printer",
+        "Enviar o PDF atual para a impressora padrão",
     );
     print_button.set_sensitive(false);
     header.pack_end(&print_button);
@@ -794,21 +797,21 @@ pub(crate) fn create_document_controller(
     toolbar.set_margin_start(8);
     toolbar.set_margin_end(8);
 
-    let previous_button = action_button("go-previous-symbolic", "Previous page");
+    let previous_button = action_button("go-previous-symbolic", "Página anterior");
     previous_button.set_sensitive(false);
     let page_spin = gtk::SpinButton::with_range(1.0, 1.0, 1.0);
     page_spin.set_sensitive(false);
     page_spin.set_width_chars(5);
     let page_total = gtk::Label::new(Some("/ 0"));
-    let next_button = action_button("go-next-symbolic", "Next page");
+    let next_button = action_button("go-next-symbolic", "Próxima página");
     next_button.set_sensitive(false);
-    let search_open_button = action_button("system-search-symbolic", "Show document search");
+    let search_open_button = action_button("system-search-symbolic", "Mostrar busca no documento");
     let search_entry = gtk::SearchEntry::new();
     search_entry.set_placeholder_text(Some("Buscar no documento"));
     search_entry.set_hexpand(true);
-    let search_button = action_button("system-search-symbolic", "Search the entire document");
-    let prev_match = action_button("go-up-symbolic", "Previous match");
-    let next_match = action_button("go-down-symbolic", "Next match");
+    let search_button = action_button("system-search-symbolic", "Buscar no documento inteiro");
+    let prev_match = action_button("go-up-symbolic", "Ocorrência anterior");
+    let next_match = action_button("go-down-symbolic", "Próxima ocorrência");
     let search_case_sensitive =
         gtk::CheckButton::with_label("Diferenciar maiúsculas de minúsculas");
     search_case_sensitive.set_tooltip_text(Some("Diferenciar maiúsculas de minúsculas"));
@@ -818,20 +821,20 @@ pub(crate) fn create_document_controller(
     search_highlight_all.set_tooltip_text(Some("Destacar todas as ocorrências na página"));
     prev_match.set_sensitive(false);
     next_match.set_sensitive(false);
-    let zoom_out = action_button("zoom-out-symbolic", "Zoom out");
+    let zoom_out = action_button("zoom-out-symbolic", "Reduzir zoom");
     let (zoom_button, zoom_menu_box) = create_menu_button("100%");
     zoom_button.set_has_frame(true);
-    zoom_button.set_tooltip_text(Some("Choose zoom level"));
+    zoom_button.set_tooltip_text(Some("Escolher nível de zoom"));
     zoom_button.set_size_request(88, -1);
     zoom_button.set_sensitive(false);
-    let zoom_in = action_button("zoom-in-symbolic", "Zoom in");
-    let fit_width = action_button("zoom-fit-best-symbolic", "Fit width");
-    let fit_page = action_button("zoom-fit-best-symbolic", "Fit page");
-    let layout_toggle = gtk::Button::with_label("Single");
-    layout_toggle.set_tooltip_text(Some("Cycle single-page, continuous, and two-page layout"));
-    let rotate_left = action_button("object-rotate-left-symbolic", "Rotate left");
-    let rotate_right = action_button("object-rotate-right-symbolic", "Rotate right");
-    let close_search_button = action_button("window-close-symbolic", "Close search");
+    let zoom_in = action_button("zoom-in-symbolic", "Ampliar zoom");
+    let fit_width = action_button("zoom-fit-best-symbolic", "Ajustar à largura");
+    let fit_page = action_button("zoom-fit-best-symbolic", "Ajustar à página");
+    let layout_toggle = gtk::Button::with_label("Página única");
+    layout_toggle.set_tooltip_text(Some("Alternar entre página única, contínuo e duas páginas"));
+    let rotate_left = action_button("object-rotate-left-symbolic", "Girar à esquerda");
+    let rotate_right = action_button("object-rotate-right-symbolic", "Girar à direita");
+    let close_search_button = action_button("window-close-symbolic", "Fechar busca");
 
     let search_bar = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     search_bar.add_css_class("toolbar");
@@ -1441,9 +1444,9 @@ pub(crate) fn create_document_controller(
         let mut state = layout_controller.state.borrow_mut();
         state.layout_mode = state.layout_mode.next();
         button.set_label(match state.layout_mode {
-            LayoutMode::SinglePage => "Single",
-            LayoutMode::Continuous => "Cont",
-            LayoutMode::TwoPage => "Dual",
+            LayoutMode::SinglePage => "Página única",
+            LayoutMode::Continuous => "Contínuo",
+            LayoutMode::TwoPage => "Duas páginas",
         });
         drop(state);
         layout_controller.area.queue_draw();
