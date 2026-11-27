@@ -790,7 +790,15 @@ fn populate_properties_list(
                 }
                 gtk4::glib::ControlFlow::Break
             }
-            Err(mpsc::TryRecvError::Disconnected) => gtk4::glib::ControlFlow::Break,
+            Err(mpsc::TryRecvError::Disconnected) => {
+                if let Some(list) = weak_list.upgrade() {
+                    populate_properties_result(
+                        &list,
+                        Err("A leitura foi interrompida antes de terminar.".to_string()),
+                    );
+                }
+                gtk4::glib::ControlFlow::Break
+            }
             Err(mpsc::TryRecvError::Empty) => gtk4::glib::ControlFlow::Continue,
         }
     });
