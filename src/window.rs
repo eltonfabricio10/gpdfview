@@ -934,6 +934,7 @@ pub(crate) fn create_document_controller(
         suppress_spin_events: Rc::new(Cell::new(false)),
         page_total,
         next_button: next_button.clone(),
+        layout_toggle: layout_toggle.clone(),
         zoom_button: zoom_button.clone(),
         search_entry,
         search_case_sensitive: search_case_sensitive.clone(),
@@ -1466,7 +1467,7 @@ pub(crate) fn create_document_controller(
         }
     });
     let layout_controller = Rc::downgrade(&controller);
-    layout_toggle.connect_clicked(move |button| {
+    layout_toggle.connect_clicked(move |_| {
         let Some(layout_controller) = layout_controller.upgrade() else {
             return;
         };
@@ -1476,12 +1477,8 @@ pub(crate) fn create_document_controller(
         let current_page = state.page_index;
         let page_height_points = state.page_height_points;
         let scale = state.scale;
-        button.set_label(match state.layout_mode {
-            LayoutMode::SinglePage => "Página única",
-            LayoutMode::Continuous => "Contínuo",
-            LayoutMode::TwoPage => "Duas páginas",
-        });
         drop(state);
+        layout_controller.sync_layout_toggle_label();
         crate::rendering::update_canvas_size(&layout_controller);
         let weak_controller = Rc::downgrade(&layout_controller);
         gtk::glib::idle_add_local_once(move || {

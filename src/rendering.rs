@@ -197,6 +197,7 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
     controller
         .page_total
         .set_text(&format!("/ {}", page.page_count));
+    controller.sync_layout_toggle_label();
     controller
         .zoom_button
         .set_label(&format!("{:.0}%", controller.state.borrow().scale * 100.0));

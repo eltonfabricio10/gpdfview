@@ -104,6 +104,7 @@ pub(crate) struct ViewerController {
     pub(crate) suppress_spin_events: Rc<Cell<bool>>,
     pub(crate) page_total: gtk::Label,
     pub(crate) next_button: gtk::Button,
+    pub(crate) layout_toggle: gtk::Button,
     pub(crate) zoom_button: gtk::MenuButton,
     pub(crate) search_entry: gtk::SearchEntry,
     pub(crate) search_case_sensitive: gtk::CheckButton,
@@ -175,6 +176,15 @@ impl ViewerController {
         self.suppress_spin_events.set(true);
         self.page_spin.set_value(value);
         self.suppress_spin_events.set(false);
+    }
+
+    pub(crate) fn sync_layout_toggle_label(&self) {
+        let label = match self.state.borrow().layout_mode {
+            crate::viewer_state::LayoutMode::SinglePage => "Página única",
+            crate::viewer_state::LayoutMode::Continuous => "Contínuo",
+            crate::viewer_state::LayoutMode::TwoPage => "Duas páginas",
+        };
+        self.layout_toggle.set_label(label);
     }
 
     pub(crate) fn handle_key_action(&self, action: KeyAction) {
@@ -295,6 +305,7 @@ impl ViewerController {
                 state.layout_mode = crate::viewer_state::LayoutMode::from_str(&saved.layout_mode);
             }
         }
+        self.sync_layout_toggle_label();
         self.status.set_text("Carregando a primeira página…");
         self.notify_state_changed();
         let (page_index, scale, rotation) = {
