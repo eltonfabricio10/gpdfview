@@ -381,12 +381,23 @@ fn populate_pages_flow(
         };
         let placeholder = gtk4::Label::new(Some(message));
         placeholder.set_xalign(0.0);
+        placeholder.set_wrap(true);
+        placeholder.set_max_width_chars(28);
         placeholder.add_css_class("dim-label");
         placeholder.set_margin_start(8);
         placeholder.set_margin_end(8);
         placeholder.set_margin_top(4);
         placeholder.set_margin_bottom(4);
         pages_flow.insert(&placeholder, -1);
+        let mut ancestor = pages_flow.clone().upcast::<gtk4::Widget>();
+        while let Some(parent) = ancestor.parent() {
+            if let Ok(scrolled) = parent.clone().downcast::<gtk4::ScrolledWindow>() {
+                let adjustment = scrolled.hadjustment();
+                adjustment.set_value(adjustment.lower());
+                break;
+            }
+            ancestor = parent;
+        }
         return;
     }
 
