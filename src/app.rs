@@ -167,7 +167,7 @@ impl ViewerController {
     }
 
     pub(crate) fn reset_after_close(&self) {
-        self.clear_document_after_close();
+        // The removed controller has already been cleared and its workers stopped.
         self.print_button.set_sensitive(false);
         self.title.set_text("gpdfview");
         self.status.set_text("Abra um PDF para começar");
