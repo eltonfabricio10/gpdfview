@@ -2,7 +2,7 @@ use gtk4 as gtk;
 use gtk4::prelude::*;
 
 use crate::app::ViewerController;
-use crate::session::{save_app_settings_for_home, AppSettings};
+use crate::session::AppSettings;
 
 fn normalized_shortcut(value: &str) -> Option<String> {
     let fragments = value
@@ -229,6 +229,12 @@ pub(crate) fn build_settings_dialog(
     shortcuts_section.set_child(Some(&shortcut_grid));
     settings_sections.append(&shortcuts_section);
     content.append(&settings_sections);
+    let settings_error = gtk::Label::new(None);
+    settings_error.set_xalign(0.0);
+    settings_error.set_wrap(true);
+    settings_error.add_css_class("error");
+    settings_error.set_visible(false);
+    content.append(&settings_error);
 
     let actions_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
     actions_row.set_halign(gtk::Align::End);
@@ -250,6 +256,7 @@ pub(crate) fn build_settings_dialog(
     let sync_switch_for_save = sync_switch.clone();
     let shortcut_error_for_save = shortcut_error.clone();
     let zoom_error_for_save = zoom_error.clone();
+    let settings_error_for_save = settings_error.clone();
     save_button.connect_clicked(move |_| {
         let mut normalized_shortcuts = std::collections::HashSet::new();
         let mut shortcut_values = Vec::with_capacity(shortcut_actions.len());
@@ -300,7 +307,15 @@ pub(crate) fn build_settings_dialog(
             next_settings.shortcuts.insert((*action).to_string(), value);
         }
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
-        save_app_settings_for_home(std::path::Path::new(&home), &next_settings);
+        if let Err(error) = crate::session::try_save_app_settings_for_home(
+            std::path::Path::new(&home),
+            &next_settings,
+        ) {
+            settings_error_for_save.set_text(&error);
+            settings_error_for_save.set_visible(true);
+            return;
+        }
+        settings_error_for_save.set_visible(false);
         controller_for_save.notify_shortcut_settings_changed(&next_settings.shortcuts);
         controller_for_save.show_status("Configurações salvas.");
         dialog_for_save.close();

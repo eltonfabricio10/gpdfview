@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 static NEXT_SESSION_TEMP_ID: AtomicU64 = AtomicU64::new(0);
 
-fn persist_session_file(path: &Path, contents: &[u8]) {
+fn try_persist_session_file(path: &Path, contents: &[u8]) -> Result<(), String> {
     let parent = path.parent().unwrap_or(Path::new("."));
     let result = (|| {
         fs::create_dir_all(parent)?;
@@ -34,8 +34,12 @@ fn persist_session_file(path: &Path, contents: &[u8]) {
         Ok(())
     })();
 
-    if let Err(error) = result {
-        eprintln!("Could not save session file {}: {error}", path.display());
+    result.map_err(|error| format!("Could not save session file {}: {error}", path.display()))
+}
+
+fn persist_session_file(path: &Path, contents: &[u8]) {
+    if let Err(error) = try_persist_session_file(path, contents) {
+        eprintln!("{error}");
     }
 }
 
@@ -87,7 +91,7 @@ pub fn settings_file_for_home(home: &Path) -> PathBuf {
     session_storage_dir_for(home).join("app_settings.txt")
 }
 
-pub fn save_app_settings_for_home(home: &Path, settings: &AppSettings) {
+pub fn try_save_app_settings_for_home(home: &Path, settings: &AppSettings) -> Result<(), String> {
     let mut lines = vec![
         format!("default_layout={}", settings.default_layout),
         format!("split_sync={}", settings.split_sync),
@@ -103,7 +107,7 @@ pub fn save_app_settings_for_home(home: &Path, settings: &AppSettings) {
     for (action, value) in shortcuts.iter() {
         lines.push(format!("shortcut:{action}={value}"));
     }
-    persist_session_file(&settings_file_for_home(home), lines.join("\n").as_bytes());
+    try_persist_session_file(&settings_file_for_home(home), lines.join("\n").as_bytes())
 }
 
 pub fn load_app_settings_for_home(home: &Path) -> AppSettings {
@@ -708,7 +712,7 @@ mod tests {
             shortcuts: HashMap::from([("open_file".to_string(), "Ctrl+O".to_string())]),
         };
 
-        save_app_settings_for_home(&home, &settings);
+        try_save_app_settings_for_home(&home, &settings).expect("save application settings");
         let restored = load_app_settings_for_home(&home);
         assert_eq!(restored.default_layout, "continuous");
         assert!(restored.split_sync);

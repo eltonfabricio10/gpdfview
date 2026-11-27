@@ -207,5 +207,6 @@ This follow-up implements the smaller UI improvements identified from `/home/elt
 | 27 | Report page progress during full-document searches | This follow-up |
 | 28 | Bound search result storage and sidebar rows | This follow-up |
 | 29 | Reject non-finite zoom increments and sanitize stored settings | This follow-up |
+| 30 | Surface settings-file write errors in the preferences window | This follow-up |
 
 The runtime screenshot comparison remains open. This environment did not provide a controlled gpdfview window for capture during this pass, so `docs/UI_REFERENCE.md` records source-level findings and the exact visual checks still needed.
