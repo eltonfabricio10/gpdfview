@@ -111,7 +111,7 @@ impl ViewerState {
 
     pub fn sync_split_view_to_primary(&mut self) {
         let page_count = self.page_count.max(1);
-        self.split_secondary_page_index = self.page_index.clamp(0, page_count - 1);
+        self.split_secondary_page_index = (self.page_index + 1).clamp(0, page_count - 1);
     }
 
     pub fn two_page_layout_pages(&self) -> Vec<i32> {
@@ -146,6 +146,19 @@ impl ViewerState {
             vec![primary]
         } else {
             vec![primary, secondary]
+        }
+    }
+
+    pub fn companion_pages(&self) -> Vec<i32> {
+        if self.page_count <= 0 {
+            return Vec::new();
+        }
+        if self.split_mode != SplitViewMode::Off {
+            return self.split_pages();
+        }
+        match self.layout_mode {
+            LayoutMode::TwoPage => self.two_page_layout_pages(),
+            _ => vec![self.page_index],
         }
     }
 }
@@ -247,6 +260,25 @@ mod tests {
     }
 
     #[test]
+    fn split_sync_selects_the_next_available_page() {
+        let mut state = ViewerState {
+            page_count: 5,
+            page_index: 2,
+            split_mode: super::SplitViewMode::Horizontal,
+            split_sync: true,
+            ..ViewerState::default()
+        };
+        state.sync_split_view_to_primary();
+        assert_eq!(state.split_secondary_page_index, 3);
+        assert_eq!(state.companion_pages(), vec![2, 3]);
+
+        state.page_index = 4;
+        state.sync_split_view_to_primary();
+        assert_eq!(state.split_secondary_page_index, 4);
+        assert_eq!(state.companion_pages(), vec![4]);
+    }
+
+    #[test]
     fn split_view_keeps_secondary_page_in_sync_when_enabled() {
         let mut state = ViewerState {
             page_count: 4,
@@ -260,7 +292,7 @@ mod tests {
         assert_eq!(pages, vec![1, 2]);
 
         state.sync_split_view_to_primary();
-        assert_eq!(state.split_secondary_page_index, 1);
+        assert_eq!(state.split_secondary_page_index, 2);
     }
 
     #[test]

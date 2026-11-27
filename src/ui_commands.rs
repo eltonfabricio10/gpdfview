@@ -106,6 +106,7 @@ pub(crate) fn dispatch_ui_command(
                 0
             };
             drop(state);
+            crate::rendering::update_canvas_size(controller);
             controller.area.queue_draw();
         }
         UiCommand::ToggleSplitViewVertical => {
@@ -118,6 +119,7 @@ pub(crate) fn dispatch_ui_command(
                 0
             };
             drop(state);
+            crate::rendering::update_canvas_size(controller);
             controller.area.queue_draw();
         }
         UiCommand::CloseSplitView => {
@@ -125,6 +127,7 @@ pub(crate) fn dispatch_ui_command(
             state.split_mode = SplitViewMode::Off;
             state.split_secondary_page_index = state.page_index;
             drop(state);
+            crate::rendering::update_canvas_size(controller);
             controller.area.queue_draw();
         }
         UiCommand::ToggleSplitSync => {

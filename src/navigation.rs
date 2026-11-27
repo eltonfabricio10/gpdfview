@@ -107,6 +107,9 @@ fn navigate_to_with_history(controller: &ViewerController, page_index: i32, reco
         }
         let render_context =
             apply_render_request(&mut state, path, target, current_scale, current_rotation);
+        if state.split_sync && state.split_mode != crate::viewer_state::SplitViewMode::Off {
+            state.sync_split_view_to_primary();
+        }
         match render_context {
             Some((path, page_index, scale, rotation)) => (path, page_index, scale, rotation),
             None => return,

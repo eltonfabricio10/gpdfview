@@ -31,6 +31,23 @@ pub(crate) fn update_canvas_size(controller: &ViewerController) {
         controller
             .area
             .set_content_height(continuous_content_height(surface.height(), page_count));
+    } else if split_mode == crate::viewer_state::SplitViewMode::Horizontal
+        || (split_mode == crate::viewer_state::SplitViewMode::Off
+            && layout_mode == LayoutMode::TwoPage)
+    {
+        controller
+            .area
+            .set_content_width(surface.width().saturating_mul(2).saturating_add(64));
+        controller
+            .area
+            .set_content_height(surface.height().saturating_add(32));
+    } else if split_mode == crate::viewer_state::SplitViewMode::Vertical {
+        controller
+            .area
+            .set_content_width(surface.width().saturating_add(32));
+        controller
+            .area
+            .set_content_height(surface.height().saturating_mul(2).saturating_add(64));
     } else {
         controller
             .area
@@ -40,6 +57,23 @@ pub(crate) fn update_canvas_size(controller: &ViewerController) {
             .set_content_height(surface.height().saturating_add(32));
     }
     controller.area.queue_draw();
+}
+
+pub(crate) fn request_companion_render(
+    controller: &ViewerController,
+    path: PathBuf,
+    page_index: i32,
+    scale: f64,
+    rotation: i32,
+) {
+    let key = crate::viewer_state::RenderKey::new(path.clone(), page_index, scale, rotation);
+    if controller.cache.borrow_mut().get(&key).is_some() {
+        return;
+    }
+    let generation = controller.state.borrow().generation;
+    controller
+        .renderer
+        .prefetch(path, &[page_index], scale, generation, rotation);
 }
 
 pub(crate) fn request_render(
@@ -225,7 +259,15 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
             state.rotation,
             state.layout_mode.as_str(),
         );
+        let companion_pages = state
+            .companion_pages()
+            .into_iter()
+            .filter(|page_index| *page_index != state.page_index)
+            .collect::<Vec<_>>();
         drop(state);
+        for companion_page in companion_pages {
+            request_companion_render(controller, path.clone(), companion_page, scale, rotation);
+        }
         controller.schedule_prefetch(
             path,
             page.page_index,
