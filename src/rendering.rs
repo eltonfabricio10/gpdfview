@@ -316,9 +316,15 @@ pub(crate) fn poll(controller: &ViewerController) {
     for response in search_responses {
         let current_generation = controller.search_generation.load(Ordering::Relaxed);
         let current_path = controller.state.borrow().path.clone();
-        if response.generation != current_generation
-            || current_path.as_ref() != Some(&response.path)
-        {
+        let current_query = controller.state.borrow().search_query.clone();
+        if !is_search_response_current(
+            current_generation,
+            response.generation,
+            current_path.as_ref(),
+            &response.path,
+            &current_query,
+            &response.query,
+        ) {
             continue;
         }
         complete_document_search(controller, response);
@@ -474,5 +480,63 @@ fn complete_document_search(controller: &ViewerController, response: crate::app:
                 .set_text(&format!("A busca falhou: {error}"));
             controller.notify_state_changed();
         }
+    }
+}
+
+fn is_search_response_current(
+    current_generation: u64,
+    response_generation: u64,
+    current_path: Option<&PathBuf>,
+    response_path: &PathBuf,
+    current_query: &str,
+    response_query: &str,
+) -> bool {
+    response_generation == current_generation
+        && current_path == Some(response_path)
+        && current_query == response_query
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_search_response_current;
+    use std::path::PathBuf;
+
+    #[test]
+    fn accepts_only_search_responses_matching_generation_path_and_query() {
+        let current = PathBuf::from("/tmp/current.pdf");
+        let other = PathBuf::from("/tmp/other.pdf");
+
+        assert!(is_search_response_current(
+            4,
+            4,
+            Some(&current),
+            &current,
+            "Aparecida",
+            "Aparecida"
+        ));
+        assert!(!is_search_response_current(
+            5,
+            4,
+            Some(&current),
+            &current,
+            "Aparecida",
+            "Aparecida"
+        ));
+        assert!(!is_search_response_current(
+            4,
+            4,
+            Some(&current),
+            &other,
+            "Aparecida",
+            "Aparecida"
+        ));
+        assert!(!is_search_response_current(
+            4,
+            4,
+            Some(&current),
+            &current,
+            "Maria",
+            "Aparecida"
+        ));
     }
 }
