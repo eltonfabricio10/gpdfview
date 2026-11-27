@@ -3,7 +3,7 @@ use libadwaita as adw;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
@@ -23,6 +23,36 @@ const THUMBNAIL_MAX_EDGE: i32 = 132;
 const THUMBNAIL_CACHE_BYTES: usize = 24 * 1024 * 1024;
 const THUMBNAIL_FRAME_WIDTH: i32 = 112;
 const THUMBNAIL_FRAME_HEIGHT: i32 = 156;
+const MAX_THUMBNAIL_WORKERS: usize = 3;
+
+struct ThumbnailWorkerPermit(Arc<AtomicUsize>);
+
+impl Drop for ThumbnailWorkerPermit {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+fn acquire_thumbnail_worker(
+    active_workers: Arc<AtomicUsize>,
+    generation: &AtomicU64,
+    generation_id: u64,
+) -> Option<ThumbnailWorkerPermit> {
+    loop {
+        if generation.load(Ordering::Relaxed) != generation_id {
+            return None;
+        }
+        let active = active_workers.load(Ordering::Acquire);
+        if active < MAX_THUMBNAIL_WORKERS
+            && active_workers
+                .compare_exchange(active, active + 1, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+        {
+            return Some(ThumbnailWorkerPermit(active_workers));
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+}
 
 struct ThumbnailPixels {
     width: i32,
@@ -111,6 +141,7 @@ fn build_page_thumbnail_button(
     controller: &ViewerController,
     thumbnail_cache: &Rc<RefCell<LruCache<RenderKey, gtk4::cairo::ImageSurface>>>,
     thumbnail_generation: Arc<AtomicU64>,
+    active_thumbnail_workers: Arc<AtomicUsize>,
     generation_id: u64,
     page_index: i32,
     is_current: bool,
@@ -186,10 +217,18 @@ fn build_page_thumbnail_button(
             let state_for_result = thumbnail_state.clone();
             let cache_for_result = thumbnail_cache.clone();
             let generation_for_worker = thumbnail_generation.clone();
+            let workers_for_worker = active_thumbnail_workers.clone();
             let (sender, receiver) = mpsc::channel();
             if thread::Builder::new()
                 .name("gpdfview-thumbnail".into())
                 .spawn(move || {
+                    let Some(_worker_permit) = acquire_thumbnail_worker(
+                        workers_for_worker,
+                        &generation_for_worker,
+                        generation_id,
+                    ) else {
+                        return;
+                    };
                     let result = crate::engine::render_page_thumbnail_cancellable(
                         &path,
                         page_index,
@@ -270,6 +309,7 @@ fn populate_pages_flow(
     controller: &ViewerController,
     thumbnail_cache: &Rc<RefCell<LruCache<RenderKey, gtk4::cairo::ImageSurface>>>,
     thumbnail_generation: &Arc<AtomicU64>,
+    active_thumbnail_workers: &Arc<AtomicUsize>,
 ) {
     let generation_id = thumbnail_generation.fetch_add(1, Ordering::Relaxed) + 1;
     while let Some(child) = pages_flow.first_child() {
@@ -294,6 +334,7 @@ fn populate_pages_flow(
             controller,
             thumbnail_cache,
             thumbnail_generation.clone(),
+            active_thumbnail_workers.clone(),
             generation_id,
             page_index,
             page_index == state.page_index,
@@ -607,11 +648,13 @@ pub fn build_sidebar(
     pages_flow.set_column_spacing(0);
     let thumbnail_cache = Rc::new(RefCell::new(LruCache::new(THUMBNAIL_CACHE_BYTES)));
     let thumbnail_generation = Arc::new(AtomicU64::new(0));
+    let active_thumbnail_workers = Arc::new(AtomicUsize::new(0));
     populate_pages_flow(
         &pages_flow,
         &controller,
         &thumbnail_cache,
         &thumbnail_generation,
+        &active_thumbnail_workers,
     );
     let thumbnails_section = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     thumbnails_section.append(&pages_flow);
@@ -772,6 +815,7 @@ pub fn build_sidebar(
     let active_bookmarks = app_bookmarks_list.clone();
     let active_thumbnail_cache = thumbnail_cache.clone();
     let active_thumbnail_generation = thumbnail_generation.clone();
+    let active_thumbnail_workers = active_thumbnail_workers.clone();
     let observed_controllers = Rc::new(RefCell::new(std::collections::HashSet::new()));
     let weak_tab_manager = Rc::downgrade(&tab_manager);
     tab_manager
@@ -782,6 +826,7 @@ pub fn build_sidebar(
                 &active_controller,
                 &active_thumbnail_cache,
                 &active_thumbnail_generation,
+                &active_thumbnail_workers,
             );
             populate_outline_list(
                 &active_outline,
@@ -803,6 +848,7 @@ pub fn build_sidebar(
             let outline_generation = outline_generation.clone();
             let cache = active_thumbnail_cache.clone();
             let thumbnail_generation = active_thumbnail_generation.clone();
+            let thumbnail_workers = active_thumbnail_workers.clone();
             let manager = weak_tab_manager.clone();
             active_controller.subscribe_state_changes(move || {
                 let Some(manager) = manager.upgrade() else {
@@ -818,7 +864,13 @@ pub fn build_sidebar(
                 let Some(controller) = manager.borrow().active_controller() else {
                     return;
                 };
-                populate_pages_flow(&pages, &controller, &cache, &thumbnail_generation);
+                populate_pages_flow(
+                    &pages,
+                    &controller,
+                    &cache,
+                    &thumbnail_generation,
+                    &thumbnail_workers,
+                );
                 populate_outline_list(&outline, controller.clone(), outline_generation.clone());
                 populate_search_results_list(&search, &controller);
                 populate_app_bookmarks_list(&bookmarks, &controller);
