@@ -56,7 +56,6 @@ pub(crate) fn update_canvas_size(controller: &ViewerController) {
             .area
             .set_content_height(surface.height().saturating_add(32));
     }
-    controller.area.queue_draw();
 }
 
 pub(crate) fn request_companion_render(
@@ -123,6 +122,7 @@ pub(crate) fn request_render(
     let cached = { controller.cache.borrow_mut().get(&key).cloned() };
     if let Some(cached) = cached {
         *controller.surface.borrow_mut() = Some(cached);
+        update_canvas_size(controller);
         controller.set_page_spin_value(f64::from(page_index + 1));
         controller.area.queue_draw();
         controller.status.set_text("Página carregada do cache.");
@@ -196,6 +196,14 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
         .borrow_mut()
         .insert(key, page_surface.clone(), bytes);
     if page.prefetch {
+        let is_visible_companion = controller
+            .state
+            .borrow()
+            .companion_pages()
+            .contains(&page.page_index);
+        if is_visible_companion {
+            controller.area.queue_draw();
+        }
         return;
     }
     *controller.surface.borrow_mut() = Some(page_surface);
