@@ -484,7 +484,18 @@ fn populate_outline_list(
                 }
                 gtk4::glib::ControlFlow::Break
             }
-            Err(mpsc::TryRecvError::Disconnected) => gtk4::glib::ControlFlow::Break,
+            Err(mpsc::TryRecvError::Disconnected) => {
+                if let Some(list) = weak_list.upgrade() {
+                    while let Some(child) = list.first_child() {
+                        list.remove(&child);
+                    }
+                    append_outline_message(
+                        &list,
+                        "A leitura do sumário foi interrompida antes de terminar.",
+                    );
+                }
+                gtk4::glib::ControlFlow::Break
+            }
             Err(mpsc::TryRecvError::Empty) => gtk4::glib::ControlFlow::Continue,
         }
     });

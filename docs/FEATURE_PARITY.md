@@ -42,7 +42,7 @@
 | Navigate next/previous search result | IMPLEMENTADO | `src/rendering.rs`, `src/app.rs`, `src/viewer_state.rs` | Cross-tab focus and stale query cancellation |
 | Highlight search results | IMPLEMENTADO | `src/viewer_state.rs`, `src/window.rs` | Visual tests for multiple matches and page changes |
 | Thumbnail page navigator | PARCIAL | `src/sidebar.rs` bounded thumbnail workers and `src/engine.rs::render_page_thumbnail_cancellable`, separate 24 MiB cache | Previous/next controls navigate nine-page blocks; empty states distinguish no open PDF from a document without pages; failed renders show an unavailable state with error details; full-list virtualization and large-PDF GUI verification remain |
-| PDF outline/bookmarks | PARCIAL | `src/engine.rs::document_outline_cancellable`, `src/sidebar.rs` asynchronous generation-aware loading | Only Go-To destinations become navigable; nested/edge-case behavior still needs verification |
+| PDF outline/bookmarks | PARCIAL | `src/engine.rs::document_outline_cancellable`, `src/sidebar.rs` asynchronous generation-aware loading | Only Go-To destinations become navigable; worker termination now replaces the loading row with a clear message; nested/edge-case behavior still needs verification |
 | Recent documents | IMPLEMENTADO | `src/session.rs`, `src/sidebar.rs` | Error handling, eviction tests and inaccessible-file UX |
 | Application favorites | IMPLEMENTADO | `src/session.rs`, `src/sidebar.rs` | Verify add/remove/duplicate handling with active-tab routing |
 | User page bookmarks | IMPLEMENTADO | `src/session.rs`, `src/sidebar.rs` | Verify persistence and navigation across multiple tabs |
