@@ -260,20 +260,30 @@ pub struct DocumentTextMatch {
     pub rect: (f64, f64, f64, f64),
 }
 
+pub struct DocumentSearchResult {
+    pub matches: Vec<DocumentTextMatch>,
+    pub truncated: bool,
+}
+
+const MAX_DOCUMENT_SEARCH_RESULTS: usize = 1_000;
+
 pub fn find_text_rectangles_in_document_cancellable<F, P>(
     path: &PathBuf,
     query: &str,
     options: poppler::FindFlags,
     is_cancelled: F,
     mut on_progress: P,
-) -> Result<Vec<DocumentTextMatch>, String>
+) -> Result<DocumentSearchResult, String>
 where
     F: Fn() -> bool,
     P: FnMut(i32, i32),
 {
     let trimmed = query.trim();
     if trimmed.is_empty() {
-        return Ok(Vec::new());
+        return Ok(DocumentSearchResult {
+            matches: Vec::new(),
+            truncated: false,
+        });
     }
 
     let document = load_document(path)?;
@@ -283,13 +293,21 @@ where
             document.n_pages()
         };
         let mut matches = Vec::new();
-        for page_index in 0..page_count {
+        let mut truncated = false;
+        'pages: for page_index in 0..page_count {
             if is_cancelled() {
-                return Ok(matches);
+                return Ok(DocumentSearchResult {
+                    matches,
+                    truncated: false,
+                });
             }
             let guard = crate::poppler_lock::lock()?;
             if let Some(page) = document.page(page_index) {
                 for rect in page.find_text_with_options(trimmed, options) {
+                    if matches.len() == MAX_DOCUMENT_SEARCH_RESULTS {
+                        truncated = true;
+                        break 'pages;
+                    }
                     matches.push(DocumentTextMatch {
                         page_index,
                         rect: (rect.x1(), rect.y1(), rect.x2(), rect.y2()),
@@ -300,7 +318,7 @@ where
             drop(guard);
             on_progress(page_index + 1, page_count);
         }
-        Ok(matches)
+        Ok(DocumentSearchResult { matches, truncated })
     })();
     let guard = crate::poppler_lock::lock()?;
     drop(document);

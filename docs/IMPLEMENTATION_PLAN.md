@@ -205,5 +205,6 @@ This follow-up implements the smaller UI improvements identified from `/home/elt
 | 25 | Protect asynchronous PDF metadata reads with the Poppler mutex | This follow-up |
 | 26 | Release Poppler between pages during document-wide search | This follow-up |
 | 27 | Report page progress during full-document searches | This follow-up |
+| 28 | Bound search result storage and sidebar rows | This follow-up |
 
 The runtime screenshot comparison remains open. This environment did not provide a controlled gpdfview window for capture during this pass, so `docs/UI_REFERENCE.md` records source-level findings and the exact visual checks still needed.

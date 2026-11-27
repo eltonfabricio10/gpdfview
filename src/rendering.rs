@@ -387,8 +387,9 @@ pub(crate) fn search_current_page(controller: &ViewerController) {
 
 fn complete_document_search(controller: &ViewerController, response: crate::app::SearchResponse) {
     match response.result {
-        Ok(matches) => {
-            let mut ordered_matches = matches;
+        Ok(search_result) => {
+            let was_truncated = search_result.truncated;
+            let mut ordered_matches = search_result.matches;
             if let Some(pivot) = ordered_matches
                 .iter()
                 .position(|entry| entry.page_index >= response.pivot_page)
@@ -423,6 +424,11 @@ fn complete_document_search(controller: &ViewerController, response: crate::app:
                 return;
             }
             controller.focus_global_search_result(0);
+            if was_truncated {
+                controller.status.set_text(&format!(
+                    "Exibindo os primeiros {total} resultados. Refine a busca para ver menos ocorrências."
+                ));
+            }
         }
         Err(error) => {
             let mut state = controller.state.borrow_mut();

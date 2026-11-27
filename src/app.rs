@@ -54,7 +54,7 @@ pub(crate) struct SearchResponse {
     pub(crate) path: PathBuf,
     pub(crate) query: String,
     pub(crate) pivot_page: i32,
-    pub(crate) result: Result<Vec<crate::engine::DocumentTextMatch>, String>,
+    pub(crate) result: Result<crate::engine::DocumentSearchResult, String>,
 }
 
 pub(crate) struct SearchProgress {

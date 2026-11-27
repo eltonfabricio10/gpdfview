@@ -38,7 +38,7 @@
 | Capability | gpdfview status | Evidence in gpdfview | Remaining work |
 |---|---|---|---|
 | Search text in current page | IMPLEMENTADO | `src/engine.rs::find_text_rectangles_in_page` | Current UI actually performs whole-document search; make wording precise |
-| Search across full document | PARCIAL | `src/engine.rs::find_text_rectangles_in_document_cancellable`, `src/rendering.rs` worker, bounded progress channel and generation handling | Search runs off the GTK thread, reports the page being scanned, releases the Poppler mutex between pages and cancels obsolete requests; partial results, stress tests and result limits remain |
+| Search across full document | PARCIAL | `src/engine.rs::find_text_rectangles_in_document_cancellable`, `src/rendering.rs` worker, bounded progress channel and generation handling | Search runs off the GTK thread, reports the page being scanned, releases the Poppler mutex between pages and caps results at 1,000 with a notice; partial results and stress tests remain |
 | Navigate next/previous search result | IMPLEMENTADO | `src/rendering.rs`, `src/app.rs`, `src/viewer_state.rs` | Cross-tab focus and stale query cancellation |
 | Highlight search results | IMPLEMENTADO | `src/viewer_state.rs`, `src/window.rs` | Visual tests for multiple matches and page changes |
 | Thumbnail page navigator | PARCIAL | `src/sidebar.rs` bounded thumbnail workers and `src/engine.rs::render_page_thumbnail_cancellable`, separate 24 MiB cache | Only a moving window of pages is instantiated; consider full-list virtualization and verify large PDFs |
