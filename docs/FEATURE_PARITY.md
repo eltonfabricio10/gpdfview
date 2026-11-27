@@ -26,7 +26,7 @@
 | Fit width / fit page | IMPLEMENTADO | `src/layout.rs`, `src/navigation.rs` | Mixed page sizes and viewport changes |
 | Page rotation | IMPLEMENTADO | `src/navigation.rs`, `src/viewer_state.rs` | Verify all layout modes and per-document restore |
 | Single-page layout | IMPLEMENTADO | `src/viewer_state.rs`, `src/window.rs` | Visual/runtime verification |
-| Continuous scrolling | PARCIAL | `src/viewer_state.rs`, `src/window.rs`, render cache/prefetch paths | Verify long documents, scroll anchoring and pages missing from cache |
+| Continuous scrolling | PARCIAL | `src/viewer_state.rs`, `src/window.rs`, render cache/prefetch paths | Each rendered surface is clipped to its page bounds to prevent bleed into neighboring pages; verify mixed page sizes, long documents, scroll anchoring and cache misses |
 | Two-page/facing-page layout | PARCIAL | `LayoutMode::TwoPage`, `src/window.rs` | Verify odd/even page alignment, mixed page dimensions and RTL policy |
 | Split view | PARCIAL | `SplitViewMode`, `src/viewer_state.rs`, `src/window.rs`, `src/ui_commands.rs` | Independent pane navigation/scroll state and clear sync semantics |
 | Fullscreen | IMPLEMENTADO | `src/window.rs`, `src/app.rs` | Manual desktop and keyboard regression tests |

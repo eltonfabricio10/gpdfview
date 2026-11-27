@@ -1070,9 +1070,13 @@ pub(crate) fn create_document_controller(
                         let surface_height = f64::from(surface.height());
                         let draw_x = x + ((page_width - surface_width) / 2.0).max(0.0);
                         let draw_y = y + ((page_height - surface_height) / 2.0).max(0.0);
+                        context.save().ok();
+                        context.rectangle(x, y, page_width, page_height);
+                        context.clip();
                         if context.set_source_surface(&surface, draw_x, draw_y).is_ok() {
                             let _ = context.paint();
                         }
+                        context.restore().ok();
                     }
 
                     if !highlights.is_empty() && page_index == current_page {
