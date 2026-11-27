@@ -604,6 +604,62 @@ fn populate_search_results_list(list: &gtk4::ListBox, controller: &ViewerControl
     }
 }
 
+fn populate_properties_list(list: &gtk4::ListBox, controller: &ViewerController) {
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
+
+    let path = controller.state.borrow().path.clone();
+    let Some(path) = path else {
+        append_sidebar_message(list, "Abra um PDF para ver suas propriedades.");
+        return;
+    };
+
+    match crate::engine::document_properties(&path) {
+        Ok(properties) if properties.is_empty() => {
+            append_sidebar_message(list, "Nenhuma propriedade disponível.");
+        }
+        Ok(properties) => {
+            for (name, value) in properties {
+                let row = gtk4::ListBoxRow::new();
+                let content = gtk4::Box::new(gtk4::Orientation::Vertical, 2);
+                content.set_margin_start(8);
+                content.set_margin_end(8);
+                content.set_margin_top(6);
+                content.set_margin_bottom(6);
+                let name_label = gtk4::Label::new(Some(&name));
+                name_label.set_xalign(0.0);
+                name_label.add_css_class("dim-label");
+                let value_label = gtk4::Label::new(Some(&value));
+                value_label.set_xalign(0.0);
+                value_label.set_wrap(true);
+                value_label.set_selectable(true);
+                content.append(&name_label);
+                content.append(&value_label);
+                row.set_child(Some(&content));
+                list.append(&row);
+            }
+        }
+        Err(error) => append_sidebar_message(
+            list,
+            &format!("Não foi possível ler as propriedades: {error}"),
+        ),
+    }
+}
+
+fn append_sidebar_message(list: &gtk4::ListBox, message: &str) {
+    let row = gtk4::ListBoxRow::new();
+    let label = gtk4::Label::new(Some(message));
+    label.set_xalign(0.0);
+    label.set_wrap(true);
+    label.set_margin_start(8);
+    label.set_margin_end(8);
+    label.set_margin_top(6);
+    label.set_margin_bottom(6);
+    row.set_child(Some(&label));
+    list.append(&row);
+}
+
 pub fn build_sidebar(
     app: &adw::Application,
     window: &adw::ApplicationWindow,
@@ -696,6 +752,7 @@ pub fn build_sidebar(
             Some("recent") => "Recentes",
             Some("favorites") => "Favoritos",
             Some("bookmarks") => "Marcadores",
+            Some("properties") => "Propriedades",
             _ => "Painel",
         };
         auxiliary_title_for_stack.set_text(title);
@@ -824,6 +881,18 @@ pub fn build_sidebar(
     app_bookmarks_section.append(&app_bookmarks_title);
     app_bookmarks_section.append(&app_bookmarks_list);
     auxiliary_stack.add_titled(&app_bookmarks_section, Some("bookmarks"), "Marcadores");
+
+    let properties_list = gtk4::ListBox::new();
+    properties_list.set_selection_mode(gtk4::SelectionMode::None);
+    properties_list.set_css_classes(&["boxed-list"]);
+    populate_properties_list(&properties_list, &controller);
+    let properties_section = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
+    let properties_title = gtk4::Label::new(Some("<b>Propriedades</b>"));
+    properties_title.set_use_markup(true);
+    properties_title.set_xalign(0.0);
+    properties_section.append(&properties_title);
+    properties_section.append(&properties_list);
+    auxiliary_stack.add_titled(&properties_section, Some("properties"), "Propriedades");
     let auxiliary_switcher = gtk4::StackSwitcher::new();
     auxiliary_switcher.set_stack(Some(&auxiliary_stack));
     auxiliary_switcher.set_halign(gtk4::Align::Center);
@@ -833,6 +902,7 @@ pub fn build_sidebar(
     let active_outline = outline_list.clone();
     let active_search = search_list.clone();
     let active_bookmarks = app_bookmarks_list.clone();
+    let active_properties = properties_list.clone();
     let active_thumbnail_cache = thumbnail_cache.clone();
     let active_thumbnail_generation = thumbnail_generation.clone();
     let active_thumbnail_workers = active_thumbnail_workers.clone();
@@ -855,6 +925,7 @@ pub fn build_sidebar(
             );
             populate_search_results_list(&active_search, &active_controller);
             populate_app_bookmarks_list(&active_bookmarks, &active_controller);
+            populate_properties_list(&active_properties, &active_controller);
 
             let controller_id = Rc::as_ptr(&active_controller.state) as usize;
             if !observed_controllers.borrow_mut().insert(controller_id) {
@@ -865,11 +936,15 @@ pub fn build_sidebar(
             let outline = active_outline.clone();
             let search = active_search.clone();
             let bookmarks = active_bookmarks.clone();
+            let properties = active_properties.clone();
             let outline_generation = outline_generation.clone();
             let cache = active_thumbnail_cache.clone();
             let thumbnail_generation = active_thumbnail_generation.clone();
             let thumbnail_workers = active_thumbnail_workers.clone();
             let manager = weak_tab_manager.clone();
+            let properties_path =
+                Rc::new(RefCell::new(active_controller.state.borrow().path.clone()));
+            let observed_properties_path = properties_path.clone();
             active_controller.subscribe_state_changes(move || {
                 let Some(manager) = manager.upgrade() else {
                     return;
@@ -894,6 +969,12 @@ pub fn build_sidebar(
                 populate_outline_list(&outline, controller.clone(), outline_generation.clone());
                 populate_search_results_list(&search, &controller);
                 populate_app_bookmarks_list(&bookmarks, &controller);
+                let current_path = controller.state.borrow().path.clone();
+                let mut previous_path = observed_properties_path.borrow_mut();
+                if *previous_path != current_path {
+                    *previous_path = current_path;
+                    populate_properties_list(&properties, &controller);
+                }
             });
         });
 

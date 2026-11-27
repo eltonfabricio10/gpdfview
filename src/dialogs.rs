@@ -6,7 +6,7 @@ use crate::session::{save_app_settings_for_home, AppSettings};
 
 pub(crate) fn build_document_properties_dialog(
     parent: &impl IsA<gtk::Window>,
-    properties: &str,
+    properties: &[(String, String)],
 ) -> gtk::Window {
     let dialog = gtk::Window::new();
     dialog.set_title(Some("Document properties"));
@@ -20,12 +20,23 @@ pub(crate) fn build_document_properties_dialog(
     content.set_margin_end(12);
     content.set_margin_bottom(12);
 
-    let label = gtk::Label::new(Some(properties));
-    label.set_xalign(0.0);
-    label.set_yalign(0.0);
-    label.set_wrap(true);
-    label.set_selectable(true);
-    content.append(&label);
+    let rows = gtk::Grid::new();
+    rows.set_row_spacing(8);
+    rows.set_column_spacing(16);
+    rows.set_column_homogeneous(false);
+    for (index, (name, value)) in properties.iter().enumerate() {
+        let name_label = gtk::Label::new(Some(name));
+        name_label.set_xalign(0.0);
+        name_label.add_css_class("dim-label");
+        let value_label = gtk::Label::new(Some(value));
+        value_label.set_xalign(0.0);
+        value_label.set_selectable(true);
+        value_label.set_wrap(true);
+        value_label.set_hexpand(true);
+        rows.attach(&name_label, 0, index as i32, 1, 1);
+        rows.attach(&value_label, 1, index as i32, 1, 1);
+    }
+    content.append(&rows);
 
     let close_button = gtk::Button::with_label("Close");
     let dialog_for_close = dialog.clone();

@@ -508,7 +508,7 @@ fn load_document(path: &PathBuf) -> Result<Document, String> {
     Document::from_file(&file.uri(), None).map_err(|error| error.to_string())
 }
 
-pub fn document_properties(path: &PathBuf) -> Result<String, String> {
+pub fn document_properties(path: &PathBuf) -> Result<Vec<(String, String)>, String> {
     let document = load_document(path)?;
     let fallback_title = path
         .file_name()
@@ -541,7 +541,7 @@ pub fn document_properties(path: &PathBuf) -> Result<String, String> {
         .map(|value| value.to_string())
         .unwrap_or_else(|| "Unknown".to_string());
 
-    let properties = [
+    let mut properties = [
         ("Title", title),
         ("Author", author),
         ("Subject", subject),
@@ -556,16 +556,16 @@ pub fn document_properties(path: &PathBuf) -> Result<String, String> {
         if normalized.is_empty() {
             None
         } else {
-            Some(format!("{label}: {normalized}"))
+            Some((label.to_string(), normalized.to_string()))
         }
     })
     .collect::<Vec<_>>();
 
-    if properties.is_empty() {
-        Ok("No document properties available.".to_string())
-    } else {
-        Ok(properties.join("\n"))
+    if let Ok(metadata) = std::fs::metadata(path) {
+        properties.push(("File size".to_string(), format!("{} bytes", metadata.len())));
     }
+    properties.push(("File path".to_string(), path.display().to_string()));
+    Ok(properties)
 }
 
 fn normalize_rotation(rotation: i32) -> i32 {
@@ -794,8 +794,10 @@ mod tests {
         let properties =
             super::document_properties(&fixture.0).expect("document metadata should be readable");
         assert!(
-            properties.contains("Pages: 2"),
-            "expected page count in metadata output: {properties}"
+            properties
+                .iter()
+                .any(|(name, value)| name == "Pages" && value == "2"),
+            "expected page count in metadata output: {properties:?}"
         );
     }
 
