@@ -1124,16 +1124,7 @@ pub(crate) fn create_document_controller(
                         let end = (state.page_index + 2).min(state.page_count.max(1) - 1);
                         (start..=end).collect()
                     }
-                    LayoutMode::TwoPage => {
-                        let mut pages = vec![state.page_index];
-                        if state.page_count > 0 && state.page_index + 1 < state.page_count {
-                            pages.push(state.page_index + 1);
-                        }
-                        if pages.len() == 1 && state.page_index > 0 {
-                            pages.insert(0, state.page_index - 1);
-                        }
-                        pages
-                    }
+                    LayoutMode::TwoPage => state.two_page_layout_pages(),
                 }
             };
             for page_index in pages {
