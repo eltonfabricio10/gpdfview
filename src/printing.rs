@@ -24,6 +24,20 @@ pub struct PrintOptions {
     pub scale_percent: u32,
 }
 
+impl PrintOptions {
+    fn normalized(&self) -> Self {
+        Self {
+            page_range: self.page_range.map(|(start, end)| {
+                let start = start.max(1);
+                (start, end.max(start))
+            }),
+            copies: self.copies.max(1),
+            orientation: self.orientation,
+            scale_percent: self.scale_percent.clamp(10, 400),
+        }
+    }
+}
+
 impl Default for PrintOptions {
     fn default() -> Self {
         Self {
@@ -154,14 +168,15 @@ fn print_pdf(path: &Path, options: &PrintOptions) -> Result<PrintOutcome, String
     if !path.is_file() {
         return Err(format!("{} não é um arquivo PDF legível.", path.display()));
     }
+    let options = options.normalized();
 
-    match submit_to_cups(path, options) {
+    match submit_to_cups(path, &options) {
         Ok(output) => Ok(PrintOutcome {
             message: format!("PDF enviado diretamente à impressora padrão. {output}"),
         }),
         Err(direct_error) => {
             let rendered = TemporaryPdf::create();
-            render_for_printing(path, &rendered.0, options).map_err(|render_error| {
+            render_for_printing(path, &rendered.0, &options).map_err(|render_error| {
                 format!(
                     "Falha no envio direto ({direct_error}); falha na geração alternativa ({render_error})"
                 )
@@ -183,6 +198,7 @@ fn print_pdf(path: &Path, options: &PrintOptions) -> Result<PrintOutcome, String
 }
 
 fn submit_to_cups(path: &Path, options: &PrintOptions) -> Result<String, String> {
+    let options = options.normalized();
     let mut command = Command::new("lp");
     command.arg("-o").arg("document-format=application/pdf");
     if let Some((start, end)) = options.page_range {
@@ -199,7 +215,7 @@ fn submit_to_cups(path: &Path, options: &PrintOptions) -> Result<String, String>
     command
         .arg("-o")
         .arg(format!("orientation-requested={orientation_value}"));
-    let scale = options.scale_percent.clamp(10, 400);
+    let scale = options.scale_percent;
     command.arg("-o").arg(format!("scaling={scale}"));
     command.arg(path);
 
@@ -224,6 +240,8 @@ fn render_for_printing(
     destination: &Path,
     options: &PrintOptions,
 ) -> Result<(), String> {
+    let options = options.normalized();
+
     let _guard = crate::poppler_lock::lock()?;
     let file = gio::File::for_path(source);
     let document = Document::from_file(&file.uri(), None).map_err(|error| error.to_string())?;
@@ -337,6 +355,33 @@ mod tests {
             (420.0, 600.0)
         );
         assert_eq!(document.page(2).expect("third page").size(), (300.0, 500.0));
+    }
+
+    #[test]
+    fn fallback_applies_requested_scale_once_and_respects_page_range() {
+        let source = PdfFixture::create();
+        let destination = TemporaryPdf::create();
+        let options = PrintOptions {
+            page_range: Some((2, 3)),
+            scale_percent: 200,
+            ..PrintOptions::default()
+        };
+
+        render_for_printing(&source.0 .0, &destination.0, &options)
+            .expect("render scaled print fallback");
+
+        let file = gio::File::for_path(&destination.0);
+        let _guard = poppler_lock::lock().expect("lock Poppler in test");
+        let document = Document::from_file(&file.uri(), None).expect("open rendered PDF");
+        assert_eq!(document.n_pages(), 2);
+        assert_eq!(
+            document.page(0).expect("first selected page").size(),
+            (840.0, 1200.0)
+        );
+        assert_eq!(
+            document.page(1).expect("second selected page").size(),
+            (600.0, 1000.0)
+        );
     }
 
     #[test]
