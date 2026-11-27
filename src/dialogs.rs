@@ -280,7 +280,8 @@ pub(crate) fn build_settings_dialog(
         }
         shortcut_error_for_save.set_visible(false);
 
-        let Ok(zoom_step) = zoom_entry_for_save.text().to_string().parse::<f64>() else {
+        let zoom_text = zoom_entry_for_save.text().to_string().replace(',', ".");
+        let Ok(zoom_step) = zoom_text.parse::<f64>() else {
             zoom_error_for_save.set_text("Informe um número entre 0,05 e 1,00.");
             zoom_error_for_save.set_visible(true);
             zoom_entry_for_save.grab_focus();
