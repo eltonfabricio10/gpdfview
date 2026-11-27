@@ -34,7 +34,12 @@ fn try_persist_session_file(path: &Path, contents: &[u8]) -> Result<(), String> 
         Ok(())
     })();
 
-    result.map_err(|error| format!("Could not save session file {}: {error}", path.display()))
+    result.map_err(|error| {
+        format!(
+            "Não foi possível salvar o arquivo de sessão {}: {error}",
+            path.display()
+        )
+    })
 }
 
 fn persist_session_file(path: &Path, contents: &[u8]) {
