@@ -62,7 +62,7 @@ pub(crate) fn request_render(
         *controller.surface.borrow_mut() = Some(cached);
         controller.set_page_spin_value(f64::from(page_index + 1));
         controller.area.queue_draw();
-        controller.status.set_text("Page loaded from memory cache");
+        controller.status.set_text("Página carregada do cache.");
         let page_count = controller.state.borrow().page_count;
         controller.schedule_prefetch(path, page_index, page_count, scale, generation, rotation);
         return;
@@ -76,7 +76,7 @@ pub(crate) fn request_render(
         state.generation = generation;
         state.request_started = Some(Instant::now());
     }
-    controller.status.set_text("Rendering page…");
+    controller.status.set_text("Renderizando página…");
     let count = controller.state.borrow().page_count;
     if count > 0 {
         controller.page_total.set_text(&format!("/ {count}"));
@@ -123,7 +123,7 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
         Err(error) => {
             controller
                 .status
-                .set_text(&format!("Could not display rendered page: {error}"));
+                .set_text(&format!("Não foi possível exibir a página: {error}"));
             return;
         }
     };
@@ -258,7 +258,7 @@ pub(crate) fn poll(controller: &ViewerController) {
             Ok(outcome) => controller.status.set_text(&outcome.message),
             Err(error) => controller
                 .status
-                .set_text(&format!("Print failed: {error}")),
+                .set_text(&format!("Falha na impressão: {error}")),
         }
     }
     let search_progress = controller
@@ -301,7 +301,7 @@ pub(crate) fn search_current_page(controller: &ViewerController) {
     let Some(path) = state.path.clone() else {
         controller
             .status
-            .set_text("Open a PDF document before searching.");
+            .set_text("Abra um PDF antes de iniciar a busca.");
         return;
     };
     let query = controller.search_entry.text().trim().to_string();
@@ -320,7 +320,7 @@ pub(crate) fn search_current_page(controller: &ViewerController) {
         controller.area.queue_draw();
         controller
             .status
-            .set_text("Type a word or phrase to search in the PDF.");
+            .set_text("Digite uma palavra ou frase para buscar no PDF.");
         controller.notify_state_changed();
         return;
     }
@@ -346,7 +346,7 @@ pub(crate) fn search_current_page(controller: &ViewerController) {
     }
     controller.search_previous_button.set_sensitive(false);
     controller.search_next_button.set_sensitive(false);
-    controller.status.set_text("Searching document…");
+    controller.status.set_text("Buscando no documento…");
     controller.area.queue_draw();
 
     let sender = controller.search_sender.clone();
@@ -381,7 +381,7 @@ pub(crate) fn search_current_page(controller: &ViewerController) {
     {
         controller
             .status
-            .set_text(&format!("Could not start search: {error}"));
+            .set_text(&format!("Não foi possível iniciar a busca: {error}"));
     }
 }
 
@@ -416,7 +416,7 @@ fn complete_document_search(controller: &ViewerController, response: crate::app:
             controller.search_next_button.set_sensitive(total > 0);
             if total == 0 {
                 controller.status.set_text(&format!(
-                    "No matches found for \"{}\" in this document.",
+                    "Nenhuma ocorrência encontrada para \"{}\" neste documento.",
                     response.query,
                 ));
                 controller.area.queue_draw();
@@ -426,7 +426,7 @@ fn complete_document_search(controller: &ViewerController, response: crate::app:
             controller.focus_global_search_result(0);
             if was_truncated {
                 controller.status.set_text(&format!(
-                    "Exibindo os primeiros {total} resultados. Refine a busca para ver menos ocorrências."
+                    "Exibindo os primeiros {total} resultados. Refine a busca para reduzir ocorrências."
                 ));
             }
         }
@@ -441,7 +441,7 @@ fn complete_document_search(controller: &ViewerController, response: crate::app:
             controller.area.queue_draw();
             controller
                 .status
-                .set_text(&format!("Search failed: {error}"));
+                .set_text(&format!("A busca falhou: {error}"));
             controller.notify_state_changed();
         }
     }

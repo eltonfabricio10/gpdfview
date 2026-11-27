@@ -972,7 +972,7 @@ pub(crate) fn create_document_controller(
                 );
                 context.set_font_size(16.0);
                 context.move_to(24.0, 40.0);
-                let _ = context.show_text("Open a PDF to start reading");
+                let _ = context.show_text("Abra um PDF para começar a leitura");
                 return;
             };
             let page_count = state.page_count.max(0);
@@ -1216,9 +1216,9 @@ pub(crate) fn create_document_controller(
             context.set_font_size(16.0);
             context.move_to(24.0, 40.0);
             if has_document {
-                let _ = context.show_text("Loading document...");
+                let _ = context.show_text("Carregando documento…");
             } else {
-                let _ = context.show_text("Open a PDF to start reading");
+                let _ = context.show_text("Abra um PDF para começar a leitura");
             }
         }
     });
