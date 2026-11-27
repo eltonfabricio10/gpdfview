@@ -160,19 +160,6 @@ impl DocumentTabManager {
         recently_closed.remove(index).path
     }
 
-    pub fn close_tab(&self, page: &gtk4::Box) -> bool {
-        let Some(notebook) = self.notebook.as_ref() else {
-            return false;
-        };
-        remove_page(
-            notebook,
-            page.upcast_ref(),
-            &self.tabs,
-            &self.controllers,
-            &self.recently_closed,
-        )
-    }
-
     #[allow(dead_code)]
     pub fn add_tab(&self, page: &gtk4::Box, title: &str) {
         self.add_tab_with_path(page, title, None);

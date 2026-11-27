@@ -59,6 +59,7 @@ pub struct OutlineEntry {
     pub depth: u32,
 }
 
+#[cfg(test)]
 pub fn document_outline(path: &PathBuf) -> Result<Vec<OutlineEntry>, String> {
     document_outline_cancellable(path, || false)
 }
@@ -86,6 +87,7 @@ where
     Ok(entries)
 }
 
+#[cfg(test)]
 pub fn render_page_thumbnail(
     path: &PathBuf,
     page_index: i32,
@@ -258,6 +260,7 @@ pub struct DocumentTextMatch {
     pub rect: (f64, f64, f64, f64),
 }
 
+#[cfg(test)]
 pub fn find_text_rectangles_in_document(
     path: &PathBuf,
     query: &str,
