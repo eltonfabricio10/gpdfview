@@ -87,8 +87,8 @@
 | Area | Current implementation | Remaining validation |
 |---|---|---|
 | Menus | Portuguese labels, document-aware sensitivity, boundary-aware first/last page actions, restorable-tab availability and shortcut hints; keyboard help and status text are localized | Check menu geometry, accessibility names, and action feedback in a running GTK session |
-| Reading layout | Dark canvas, light page, Portuguese tooltips, status messages, error feedback and empty/loading states, left thumbnail panel, auxiliary panels, and bottom search bar | Compare screenshots at the reference's approximate 1360 × 725 size and 50% zoom |
-| Auxiliary panels | Estrutura/sumário, busca, recent documents, favorites, user bookmarks and properties localized in Portuguese | Validate narrow windows, long lists and switching documents visually |
+| Reading layout | Dark canvas, light page, Portuguese tooltips, status messages, error feedback and empty/loading states, left thumbnail panel, auxiliary panels, and bottom search bar | Both side panels now use draggable GTK paned dividers; compare screenshots at the reference's approximate 1360 × 725 size and 50% zoom |
+| Auxiliary panels | Estrutura/sumário, busca, recent documents, favorites, user bookmarks and properties localized in Portuguese | Panel widths can be adjusted independently; validate narrow windows, long lists and switching documents visually |
 | Preferences | Separate document-view and keyboard-shortcut categories; Portuguese layout choices; validation for shortcut conflicts; menu labels update after saving | Exercise save/cancel and verify updated labels and key actions in a running app |
 
 The visual review in [`UI_REFERENCE.md`](UI_REFERENCE.md) is source-based and maps reference states to implementation files. It is not a pixel comparison or a manual application run.

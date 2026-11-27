@@ -263,14 +263,27 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     sidebar.set_visible(true);
     auxiliary_sidebar.set_visible(false);
 
-    let content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    content.append(&sidebar);
-    content.append(&notebook);
-    content.append(&auxiliary_sidebar);
+    let document_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
+    document_paned.set_start_child(Some(&notebook));
+    document_paned.set_end_child(Some(&auxiliary_sidebar));
+    document_paned.set_resize_start_child(true);
+    document_paned.set_resize_end_child(false);
+    document_paned.set_shrink_start_child(false);
+    document_paned.set_shrink_end_child(true);
+    document_paned.set_position(820);
+
+    let content_paned = gtk::Paned::new(gtk::Orientation::Horizontal);
+    content_paned.set_start_child(Some(&sidebar));
+    content_paned.set_end_child(Some(&document_paned));
+    content_paned.set_resize_start_child(false);
+    content_paned.set_resize_end_child(true);
+    content_paned.set_shrink_start_child(true);
+    content_paned.set_shrink_end_child(false);
+    content_paned.set_position(220);
     shell.append(&header);
     shell.append(&menu_bar);
     shell.append(&toolbar_host);
-    shell.append(&content);
+    shell.append(&content_paned);
     shell.append(&search_host);
     let open_controller = initial.clone();
     let open_window = window.clone();

@@ -844,7 +844,7 @@ pub fn build_sidebar(
     };
 
     let sidebar_root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    sidebar_root.set_size_request(210, -1);
+    sidebar_root.set_size_request(160, -1);
     sidebar_root.add_css_class("sidebar");
 
     let panel_header = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
@@ -890,7 +890,7 @@ pub fn build_sidebar(
     sidebar_root.append(&sidebar_scrolled);
 
     let auxiliary_sidebar = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    auxiliary_sidebar.set_size_request(240, -1);
+    auxiliary_sidebar.set_size_request(180, -1);
     auxiliary_sidebar.add_css_class("sidebar");
     let auxiliary_header = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
     auxiliary_header.set_margin_start(8);
