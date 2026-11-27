@@ -13,6 +13,35 @@ use crate::session::remember_document_view;
 use crate::viewer_state::apply_render_request;
 use crate::viewer_state::LayoutMode;
 
+pub(crate) fn update_canvas_size(controller: &ViewerController) {
+    let (layout_mode, split_mode, page_count) = {
+        let state = controller.state.borrow();
+        (state.layout_mode, state.split_mode, state.page_count)
+    };
+    let Some(surface) = controller.surface.borrow().as_ref().cloned() else {
+        return;
+    };
+
+    if layout_mode == LayoutMode::Continuous
+        && split_mode == crate::viewer_state::SplitViewMode::Off
+    {
+        controller
+            .area
+            .set_content_width(surface.width().saturating_add(96));
+        controller
+            .area
+            .set_content_height(continuous_content_height(surface.height(), page_count));
+    } else {
+        controller
+            .area
+            .set_content_width(surface.width().saturating_add(32));
+        controller
+            .area
+            .set_content_height(surface.height().saturating_add(32));
+    }
+    controller.area.queue_draw();
+}
+
 pub(crate) fn request_render(
     controller: &ViewerController,
     path: PathBuf,
@@ -150,22 +179,7 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
             None
         }
     };
-    {
-        let state = controller.state.borrow();
-        if state.layout_mode == LayoutMode::Continuous {
-            let width = page.width.saturating_add(96);
-            let height = continuous_content_height(page.height, page.page_count);
-            controller.area.set_content_width(width);
-            controller.area.set_content_height(height);
-        } else {
-            controller
-                .area
-                .set_content_width(page.width.saturating_add(32));
-            controller
-                .area
-                .set_content_height(page.height.saturating_add(32));
-        }
-    }
+    update_canvas_size(controller);
     controller.area.queue_draw();
     controller
         .page_spin

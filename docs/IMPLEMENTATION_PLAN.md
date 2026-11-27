@@ -232,5 +232,6 @@ This follow-up implements the smaller UI improvements identified from `/home/elt
 | 52 | Make both side panels resizable with splitters | This follow-up |
 | 53 | Align all menu item labels consistently | This follow-up |
 | 54 | Clip continuous page rendering to page bounds | This follow-up |
+| 55 | Resize the canvas when changing reading layout | This follow-up |
 
 The runtime screenshot comparison remains open. This environment did not provide a controlled gpdfview window for capture during this pass, so `docs/UI_REFERENCE.md` records source-level findings and the exact visual checks still needed.

@@ -16,7 +16,7 @@ use crate::document_actions::{open_document_in_new_tab, show_open_dialog};
 use crate::document_tabs::DocumentTabManager;
 use crate::keyboard::KeyAction;
 use crate::layout::{
-    cairo_search_highlight_rects, continuous_page_stride, CONTINUOUS_PAGE_GAP,
+    cairo_search_highlight_rects, continuous_page_stride, continuous_page_top, CONTINUOUS_PAGE_GAP,
     CONTINUOUS_SIDE_MARGIN, CONTINUOUS_TOP_MARGIN,
 };
 use crate::printing::PrintService;
@@ -1464,13 +1464,30 @@ pub(crate) fn create_document_controller(
         };
         let mut state = layout_controller.state.borrow_mut();
         state.layout_mode = state.layout_mode.next();
+        let layout_mode = state.layout_mode;
+        let current_page = state.page_index;
+        let page_height_points = state.page_height_points;
+        let scale = state.scale;
         button.set_label(match state.layout_mode {
             LayoutMode::SinglePage => "Página única",
             LayoutMode::Continuous => "Contínuo",
             LayoutMode::TwoPage => "Duas páginas",
         });
         drop(state);
-        layout_controller.area.queue_draw();
+        crate::rendering::update_canvas_size(&layout_controller);
+        if layout_mode == LayoutMode::Continuous && page_height_points > 0.0 {
+            let weak_controller = Rc::downgrade(&layout_controller);
+            gtk::glib::idle_add_local_once(move || {
+                let Some(controller) = weak_controller.upgrade() else {
+                    return;
+                };
+                let adjustment = controller.scrolled.vadjustment();
+                let target = continuous_page_top(current_page, page_height_points, scale);
+                let lower = adjustment.lower();
+                let max_value = (adjustment.upper() - adjustment.page_size()).max(lower);
+                adjustment.set_value(target.clamp(lower, max_value));
+            });
+        }
     });
     let rotate_left_controller = Rc::downgrade(&controller);
     rotate_left.connect_clicked(move |_| {
