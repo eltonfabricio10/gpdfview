@@ -36,7 +36,7 @@ pub(crate) fn dispatch_ui_command(
             } else {
                 controller
                     .status
-                    .set_text("Sidebar indisponivel nesta visualizacao.");
+                    .set_text("Painel lateral indisponível nesta visualização.");
             }
         }
         UiCommand::ToggleFavoriteDocument => {
@@ -140,7 +140,7 @@ pub(crate) fn dispatch_ui_command(
             };
             controller
                 .status
-                .set_text(&format!("Divisao de visualizacao {mode_message}."));
+                .set_text(&format!("Divisão de visualização {mode_message}."));
             drop(state);
             controller.area.queue_draw();
         }
@@ -150,7 +150,7 @@ pub(crate) fn dispatch_ui_command(
         UiCommand::ShowTabsHint => {
             controller
                 .status
-                .set_text("Use o botao Abrir para criar uma nova aba com outro documento.");
+                .set_text("Use o botão Abrir para criar uma nova aba com outro documento.");
         }
     }
 }

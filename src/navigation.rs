@@ -54,7 +54,7 @@ pub(crate) fn handle_key_action(controller: &ViewerController, action: KeyAction
         KeyAction::OpenFile => {
             controller
                 .status
-                .set_text("Open a PDF document using the toolbar button or menu action.");
+                .set_text("Abra um PDF pelo botão da barra de ferramentas ou pelo menu.");
         }
         KeyAction::FocusSearch => {
             controller.show_search();
