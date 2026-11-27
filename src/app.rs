@@ -105,6 +105,39 @@ pub(crate) struct ViewerController {
 }
 
 impl ViewerController {
+    pub(crate) fn shutdown(&self) {
+        self.search_generation
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.renderer.shutdown();
+        self.printer.shutdown();
+    }
+
+    pub(crate) fn clear_document_after_close(&self) {
+        self.shutdown();
+        let mut state = self.state.borrow_mut();
+        state.path = None;
+        state.page_index = 0;
+        state.page_count = 0;
+        state.page_width_points = 0.0;
+        state.page_height_points = 0.0;
+        state.search_query.clear();
+        state.search_results.clear();
+        state.search_highlights.clear();
+        state.pending_search_rect = None;
+        drop(state);
+        self.page_spin.set_sensitive(false);
+        self.page_total.set_text("/ 0");
+        self.status.set_text("Document closed");
+        self.area.queue_draw();
+    }
+
+    pub(crate) fn reset_after_close(&self) {
+        self.clear_document_after_close();
+        self.print_button.set_sensitive(false);
+        self.title.set_text("gpdfview");
+        self.status.set_text("Open a PDF document to begin");
+    }
+
     pub(crate) fn set_page_spin_value(&self, value: f64) {
         self.suppress_spin_events.set(true);
         self.page_spin.set_value(value);

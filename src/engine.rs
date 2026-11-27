@@ -342,6 +342,16 @@ impl PdfRenderer {
         generation
     }
 
+    pub fn shutdown(&self) {
+        let (lock, wake) = &*self.pending;
+        if let Ok(mut state) = lock.lock() {
+            state.stopped = true;
+            state.request = None;
+            state.prefetches.clear();
+            wake.notify_one();
+        }
+    }
+
     pub fn request(&self, path: PathBuf, page_index: i32, scale: f64, rotation: i32) -> u64 {
         let generation = self.next_generation.fetch_add(1, Ordering::Relaxed);
         let request = RenderRequest {
@@ -415,11 +425,7 @@ impl PdfRenderer {
 
 impl Drop for PdfRenderer {
     fn drop(&mut self) {
-        let (lock, wake) = &*self.pending;
-        if let Ok(mut state) = lock.lock() {
-            state.stopped = true;
-            wake.notify_one();
-        }
+        self.shutdown();
     }
 }
 

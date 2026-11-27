@@ -650,8 +650,11 @@ pub(crate) fn create_document_controller(
         search_generation: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
     });
 
-    let draw_controller = controller.clone();
+    let draw_controller = Rc::downgrade(&controller);
     drawing_area.set_draw_func(move |_, context, width, height| {
+        let Some(draw_controller) = draw_controller.upgrade() else {
+            return;
+        };
         context.set_source_rgb(0.86, 0.87, 0.90);
         let _ = context.paint();
 
@@ -927,12 +930,15 @@ pub(crate) fn create_document_controller(
 
     let scroll_controller =
         gtk::EventControllerScroll::new(gtk::EventControllerScrollFlags::VERTICAL);
-    let scroll_zoom = controller.clone();
+    let scroll_zoom = Rc::downgrade(&controller);
     scroll_controller.connect_scroll(move |scroll, delta_x, delta_y| {
         let _ = delta_x;
         let modifiers = scroll.current_event_state();
         let step = crate::navigation::scroll_zoom_step(delta_y, modifiers);
         if step != 0.0 {
+            let Some(scroll_zoom) = scroll_zoom.upgrade() else {
+                return gtk::glib::Propagation::Proceed;
+            };
             scroll_zoom.change_zoom(step);
             return gtk::glib::Propagation::Stop;
         }
@@ -941,11 +947,14 @@ pub(crate) fn create_document_controller(
     });
     controller.area.add_controller(scroll_controller);
 
-    let continuous_sync_controller = controller.clone();
+    let continuous_sync_controller = Rc::downgrade(&controller);
     controller
         .scrolled
         .vadjustment()
         .connect_value_changed(move |adjustment| {
+            let Some(continuous_sync_controller) = continuous_sync_controller.upgrade() else {
+                return;
+            };
             let (layout_mode, page_count, page_height_points, scale, current_page) = {
                 let state = continuous_sync_controller.state.borrow();
                 (
@@ -975,12 +984,15 @@ pub(crate) fn create_document_controller(
             }
         });
 
-    let keyboard_controller = controller.clone();
+    let keyboard_controller = Rc::downgrade(&controller);
     let last_directory = last_directory_for_home_path();
     let open_window = window.clone();
     let open_app = app.clone();
     let open_tab_manager = tab_manager.clone();
     input_controller.connect_key_pressed(move |_, keyval, _, state| {
+        let Some(keyboard_controller) = keyboard_controller.upgrade() else {
+            return gtk::glib::Propagation::Proceed;
+        };
         let key_name = keyval.name().unwrap_or_default();
         let settings = crate::session::load_app_settings();
         let action =
@@ -1002,19 +1014,28 @@ pub(crate) fn create_document_controller(
         gtk::glib::Propagation::Proceed
     });
 
-    let previous_controller = controller.clone();
+    let previous_controller = Rc::downgrade(&controller);
     previous_button.connect_clicked(move |_| {
+        let Some(previous_controller) = previous_controller.upgrade() else {
+            return;
+        };
         let page = previous_controller.state.borrow().page_index - 1;
         previous_controller.navigate_to(page);
     });
-    let next_controller = controller.clone();
+    let next_controller = Rc::downgrade(&controller);
     next_button.connect_clicked(move |_| {
+        let Some(next_controller) = next_controller.upgrade() else {
+            return;
+        };
         let page = next_controller.state.borrow().page_index + 1;
         next_controller.navigate_to(page);
     });
     let page_spin = controller.page_spin.clone();
-    let spin_controller = controller.clone();
+    let spin_controller = Rc::downgrade(&controller);
     page_spin.connect_value_changed(move |spin| {
+        let Some(spin_controller) = spin_controller.upgrade() else {
+            return;
+        };
         if spin_controller.suppress_spin_events.get() || !spin.is_sensitive() {
             return;
         }
@@ -1023,36 +1044,67 @@ pub(crate) fn create_document_controller(
             spin_controller.navigate_to(target_page);
         }
     });
-    let zoom_out_controller = controller.clone();
+    let zoom_out_controller = Rc::downgrade(&controller);
     zoom_out.connect_clicked(move |_| {
+        let Some(zoom_out_controller) = zoom_out_controller.upgrade() else {
+            return;
+        };
         let step = crate::session::load_app_settings()
             .zoom_step
             .clamp(0.05, 1.0);
         zoom_out_controller.change_zoom(-step);
     });
-    let zoom_in_controller = controller.clone();
+    let zoom_in_controller = Rc::downgrade(&controller);
     zoom_in.connect_clicked(move |_| {
+        let Some(zoom_in_controller) = zoom_in_controller.upgrade() else {
+            return;
+        };
         let step = crate::session::load_app_settings()
             .zoom_step
             .clamp(0.05, 1.0);
         zoom_in_controller.change_zoom(step);
     });
-    let search_controller = controller.clone();
-    search_button.connect_clicked(move |_| search_controller.search_current_page());
-    let previous_match_controller = controller.clone();
-    prev_match.connect_clicked(move |_| previous_match_controller.search_previous_match());
-    let next_match_controller = controller.clone();
-    next_match.connect_clicked(move |_| next_match_controller.search_next_match());
-    let search_activate_controller = controller.clone();
-    controller.search_entry.connect_activate(move |_| {
-        search_activate_controller.search_current_page();
+    let search_controller = Rc::downgrade(&controller);
+    search_button.connect_clicked(move |_| {
+        if let Some(search_controller) = search_controller.upgrade() {
+            search_controller.search_current_page();
+        }
     });
-    let fit_controller = controller.clone();
-    fit_width.connect_clicked(move |_| fit_controller.fit_width());
-    let fit_page_controller = controller.clone();
-    fit_page.connect_clicked(move |_| fit_page_controller.fit_page());
-    let layout_controller = controller.clone();
+    let previous_match_controller = Rc::downgrade(&controller);
+    prev_match.connect_clicked(move |_| {
+        if let Some(previous_match_controller) = previous_match_controller.upgrade() {
+            previous_match_controller.search_previous_match();
+        }
+    });
+    let next_match_controller = Rc::downgrade(&controller);
+    next_match.connect_clicked(move |_| {
+        if let Some(next_match_controller) = next_match_controller.upgrade() {
+            next_match_controller.search_next_match();
+        }
+    });
+    let search_activate_controller = Rc::downgrade(&controller);
+    controller.search_entry.connect_activate(move |_| {
+        if let Some(search_activate_controller) = search_activate_controller.upgrade() {
+            search_activate_controller.search_current_page();
+        }
+    });
+    let fit_controller = Rc::downgrade(&controller);
+    fit_width.connect_clicked(move |_| {
+        if let Some(fit_controller) = fit_controller.upgrade() {
+            fit_controller.fit_width();
+        }
+    });
+    let fit_page_controller = Rc::downgrade(&controller);
+    fit_page.connect_clicked(move |_| {
+        if let Some(fit_page_controller) = fit_page_controller.upgrade() {
+            fit_page_controller.fit_page();
+        }
+    });
+    let layout_controller = Rc::downgrade(&controller);
     layout_toggle.connect_clicked(move |button| {
+        let Some(layout_controller) = layout_controller.upgrade() else {
+            return;
+        };
         let mut state = layout_controller.state.borrow_mut();
         state.layout_mode = state.layout_mode.next();
         button.set_label(match state.layout_mode {
@@ -1063,15 +1115,27 @@ pub(crate) fn create_document_controller(
         drop(state);
         layout_controller.area.queue_draw();
     });
-    let rotate_left_controller = controller.clone();
-    rotate_left.connect_clicked(move |_| rotate_left_controller.rotate_page(-90));
-    let rotate_right_controller = controller.clone();
-    rotate_right.connect_clicked(move |_| rotate_right_controller.rotate_page(90));
+    let rotate_left_controller = Rc::downgrade(&controller);
+    rotate_left.connect_clicked(move |_| {
+        if let Some(rotate_left_controller) = rotate_left_controller.upgrade() {
+            rotate_left_controller.rotate_page(-90);
+        }
+    });
+    let rotate_right_controller = Rc::downgrade(&controller);
+    rotate_right.connect_clicked(move |_| {
+        if let Some(rotate_right_controller) = rotate_right_controller.upgrade() {
+            rotate_right_controller.rotate_page(90);
+        }
+    });
 
-    let poll_controller = controller.clone();
+    let poll_controller = Rc::downgrade(&controller);
     glib::timeout_add_local(Duration::from_millis(16), move || {
-        poll_controller.poll();
-        glib::ControlFlow::Continue
+        if let Some(poll_controller) = poll_controller.upgrade() {
+            poll_controller.poll();
+            glib::ControlFlow::Continue
+        } else {
+            glib::ControlFlow::Break
+        }
     });
 
     if let Some(path) = initial_path {

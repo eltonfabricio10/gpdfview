@@ -53,20 +53,44 @@ fn remove_page(
     page: &gtk4::Widget,
     tabs: &Rc<RefCell<HashMap<usize, TabMetadata>>>,
     controllers: &Rc<RefCell<HashMap<usize, Rc<ViewerController>>>>,
+    active_controller_hooks: &Rc<RefCell<Vec<Rc<dyn Fn(Rc<ViewerController>)>>>>,
     recently_closed: &Rc<RefCell<Vec<TabMetadata>>>,
 ) -> bool {
     let Some(page_index) = notebook.page_num(page) else {
         return false;
     };
+    let was_active = notebook
+        .current_page()
+        .and_then(|index| notebook.nth_page(Some(index)))
+        .is_some_and(|current| current.as_ptr() as usize == page.as_ptr() as usize);
 
     let key = page.as_ptr() as usize;
     if let Some(metadata) = tabs.borrow_mut().remove(&key) {
         recently_closed.borrow_mut().push(metadata);
     }
-    controllers.borrow_mut().remove(&key);
+    let removed_controller = controllers.borrow_mut().remove(&key);
+    if let Some(controller) = removed_controller.as_ref() {
+        controller.clear_document_after_close();
+    }
 
     notebook.remove_page(Some(page_index));
     notebook.set_show_tabs(should_show_tabs(notebook.n_pages()));
+    let active = notebook
+        .current_page()
+        .and_then(|index| notebook.nth_page(Some(index)))
+        .and_then(|page| controllers.borrow().get(&(page.as_ptr() as usize)).cloned());
+    if was_active {
+        if let Some(controller) = active.as_ref() {
+            update_active_header(controller);
+        } else if let Some(controller) = removed_controller.as_ref() {
+            controller.reset_after_close();
+        }
+        if let Some(controller) = active.or(removed_controller) {
+            for hook in active_controller_hooks.borrow().iter() {
+                hook(controller.clone());
+            }
+        }
+    }
     true
 }
 
@@ -208,6 +232,7 @@ impl DocumentTabManager {
         let weak_page = page.downgrade();
         let tabs = Rc::clone(&self.tabs);
         let controllers = Rc::clone(&self.controllers);
+        let active_controller_hooks = Rc::clone(&self.active_controller_hooks);
         let recently_closed = Rc::clone(&self.recently_closed);
         close_button.connect_clicked(move |_| {
             let (Some(notebook), Some(page)) = (weak_notebook.upgrade(), weak_page.upgrade())
@@ -219,6 +244,7 @@ impl DocumentTabManager {
                 page.upcast_ref(),
                 &tabs,
                 &controllers,
+                &active_controller_hooks,
                 &recently_closed,
             );
         });

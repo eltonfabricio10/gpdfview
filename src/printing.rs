@@ -5,7 +5,9 @@ use poppler::Document;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, SyncSender, TrySendError};
+use std::sync::Arc;
 use std::thread;
 
 #[derive(Clone, Copy, Debug)]
@@ -39,29 +41,46 @@ struct PrintRequest {
     options: PrintOptions,
 }
 
+enum PrintCommand {
+    Print(PrintRequest),
+    Stop,
+}
+
 #[derive(Debug)]
 pub struct PrintOutcome {
     pub message: String,
 }
 
 pub struct PrintService {
-    requests: SyncSender<PrintRequest>,
+    requests: SyncSender<PrintCommand>,
     responses: Receiver<Result<PrintOutcome, String>>,
+    stopped: Arc<AtomicBool>,
 }
 
 impl PrintService {
     pub fn new() -> io::Result<Self> {
-        let (request_tx, request_rx) = mpsc::sync_channel::<PrintRequest>(1);
+        let (request_tx, request_rx) = mpsc::sync_channel::<PrintCommand>(1);
         let (response_tx, responses) = mpsc::channel();
+        let stopped = Arc::new(AtomicBool::new(false));
+        let worker_stopped = stopped.clone();
         thread::Builder::new()
             .name("gpdfview-printer".into())
             .spawn(move || {
-                while let Ok(request) = request_rx.recv() {
-                    if response_tx
-                        .send(print_pdf(&request.path, &request.options))
-                        .is_err()
-                    {
-                        return;
+                while let Ok(command) = request_rx.recv() {
+                    match command {
+                        PrintCommand::Stop => return,
+                        PrintCommand::Print(request) => {
+                            if worker_stopped.load(Ordering::Relaxed) {
+                                return;
+                            }
+                            if response_tx
+                                .send(print_pdf(&request.path, &request.options))
+                                .is_err()
+                                || worker_stopped.load(Ordering::Relaxed)
+                            {
+                                return;
+                            }
+                        }
                     }
                 }
             })?;
@@ -69,12 +88,16 @@ impl PrintService {
         Ok(Self {
             requests: request_tx,
             responses,
+            stopped,
         })
     }
 
     pub fn submit_with_options(&self, path: PathBuf, options: PrintOptions) -> Result<(), String> {
+        if self.stopped.load(Ordering::Relaxed) {
+            return Err("The print worker is shutting down".to_string());
+        }
         self.requests
-            .try_send(PrintRequest { path, options })
+            .try_send(PrintCommand::Print(PrintRequest { path, options }))
             .map_err(|error| match error {
                 TrySendError::Full(_) => "A print job is already running".to_string(),
                 TrySendError::Disconnected(_) => "The print worker is unavailable".to_string(),
@@ -83,6 +106,18 @@ impl PrintService {
 
     pub fn try_recv(&self) -> Result<Result<PrintOutcome, String>, mpsc::TryRecvError> {
         self.responses.try_recv()
+    }
+
+    pub fn shutdown(&self) {
+        if !self.stopped.swap(true, Ordering::Relaxed) {
+            let _ = self.requests.try_send(PrintCommand::Stop);
+        }
+    }
+}
+
+impl Drop for PrintService {
+    fn drop(&mut self) {
+        self.shutdown();
     }
 }
 
