@@ -21,8 +21,8 @@ use crate::viewer_state::RenderKey;
 
 const THUMBNAIL_MAX_EDGE: i32 = 132;
 const THUMBNAIL_CACHE_BYTES: usize = 24 * 1024 * 1024;
-const THUMBNAIL_FRAME_WIDTH: i32 = 96;
-const THUMBNAIL_FRAME_HEIGHT: i32 = 136;
+const THUMBNAIL_FRAME_WIDTH: i32 = 112;
+const THUMBNAIL_FRAME_HEIGHT: i32 = 156;
 
 struct ThumbnailPixels {
     width: i32,
@@ -543,7 +543,8 @@ pub fn build_sidebar(
     };
 
     let sidebar_root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
-    sidebar_root.set_size_request(178, -1);
+    sidebar_root.set_size_request(210, -1);
+    sidebar_root.add_css_class("sidebar");
 
     let panel_header = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
     panel_header.set_margin_start(8);
