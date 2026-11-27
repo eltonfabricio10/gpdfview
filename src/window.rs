@@ -802,6 +802,7 @@ pub(crate) fn create_document_controller(
     previous_button.set_sensitive(false);
     let page_spin = gtk::SpinButton::with_range(1.0, 1.0, 1.0);
     page_spin.set_sensitive(false);
+    page_spin.set_text("—");
     page_spin.set_width_chars(5);
     let page_total = gtk::Label::new(Some("/ 0"));
     let next_button = action_button("go-next-symbolic", "Próxima página");

@@ -154,6 +154,7 @@ impl ViewerController {
         state.pending_search_rect = None;
         drop(state);
         self.page_spin.set_sensitive(false);
+        self.page_spin.set_text("—");
         self.previous_button.set_sensitive(false);
         self.next_button.set_sensitive(false);
         self.zoom_button.set_sensitive(false);
