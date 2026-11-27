@@ -321,8 +321,8 @@ pub(crate) fn build_settings_dialog(
             return;
         }
         settings_error_for_save.set_visible(false);
-        controller_for_save.notify_shortcut_settings_changed(&next_settings.shortcuts);
-        controller_for_save.show_status("Configurações salvas.");
+        controller_for_save.apply_app_settings(&next_settings);
+        controller_for_save.show_status("Configurações salvas e aplicadas.");
         dialog_for_save.close();
     });
     cancel_button.connect_clicked(move |_| {

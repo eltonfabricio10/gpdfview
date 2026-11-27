@@ -105,6 +105,10 @@ pub struct ViewerState {
 }
 
 impl ViewerState {
+    pub fn apply_runtime_settings(&mut self, settings: &crate::session::AppSettings) {
+        self.split_sync = settings.split_sync;
+    }
+
     pub fn sync_split_view_to_primary(&mut self) {
         let page_count = self.page_count.max(1);
         self.split_secondary_page_index = self.page_index.clamp(0, page_count - 1);
@@ -288,5 +292,18 @@ mod tests {
             ..ViewerState::default()
         };
         assert_eq!(state.two_page_layout_pages(), vec![3, 4]);
+    }
+
+    #[test]
+    fn runtime_settings_apply_split_sync() {
+        let mut state = ViewerState {
+            split_sync: true,
+            ..ViewerState::default()
+        };
+        state.apply_runtime_settings(&crate::session::AppSettings {
+            split_sync: false,
+            ..crate::session::AppSettings::default()
+        });
+        assert!(!state.split_sync);
     }
 }

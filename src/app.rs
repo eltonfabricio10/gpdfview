@@ -254,6 +254,12 @@ impl ViewerController {
         }
     }
 
+    pub(crate) fn apply_app_settings(&self, settings: &crate::session::AppSettings) {
+        self.state.borrow_mut().apply_runtime_settings(settings);
+        self.notify_shortcut_settings_changed(&settings.shortcuts);
+        self.notify_state_changed();
+    }
+
     pub(crate) fn notify_state_changed(&self) {
         for hook in self.state_change_hooks.borrow().iter() {
             hook();
