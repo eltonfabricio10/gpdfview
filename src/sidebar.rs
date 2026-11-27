@@ -470,7 +470,7 @@ fn populate_app_bookmarks_list(list: &gtk4::ListBox, controller: &ViewerControll
     let bookmarks = load_document_bookmarks(&path);
     if bookmarks.is_empty() {
         let row = gtk4::ListBoxRow::new();
-        let label = gtk4::Label::new(Some("Nenhum marcador desta página."));
+        let label = gtk4::Label::new(Some("Nenhum marcador salvo para este documento."));
         label.set_xalign(0.0);
         label.set_wrap(true);
         label.set_margin_start(8);
@@ -482,6 +482,7 @@ fn populate_app_bookmarks_list(list: &gtk4::ListBox, controller: &ViewerControll
         return;
     }
 
+    let current_page = controller.state.borrow().page_index;
     for bookmark in bookmarks {
         let row = gtk4::ListBoxRow::new();
         let row_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 8);
@@ -493,30 +494,50 @@ fn populate_app_bookmarks_list(list: &gtk4::ListBox, controller: &ViewerControll
         let label = gtk4::Label::new(Some(&bookmark.label));
         label.set_xalign(0.0);
         label.set_hexpand(true);
+        label.set_ellipsize(gtk4::pango::EllipsizeMode::End);
         row_box.append(&label);
 
-        let page_label = gtk4::Label::new(Some(&format!("P{}", bookmark.page_index + 1)));
+        let page_label = gtk4::Label::new(Some(&format!("{}", bookmark.page_index + 1)));
         page_label.set_xalign(1.0);
         row_box.append(&page_label);
 
         let bookmark_page = bookmark.page_index;
         let bookmark_path = bookmark.path.clone();
-        let bookmark_controller = controller.clone();
+        let bookmark_manager = controller.tab_manager.clone();
         row.connect_activate(move |_| {
-            bookmark_controller.navigate_to(bookmark_page);
+            if let Some(controller) = bookmark_manager
+                .upgrade()
+                .and_then(|manager| manager.borrow().active_controller())
+            {
+                controller.navigate_to(bookmark_page);
+            }
         });
 
-        let remove_button = gtk4::Button::with_label("×");
+        let remove_button = gtk4::Button::from_icon_name("user-trash-symbolic");
         remove_button.set_has_frame(false);
         remove_button.set_tooltip_text(Some("Remover marcador"));
         let remove_path = bookmark_path.clone();
         let remove_page = bookmark_page;
+        let remove_manager = controller.tab_manager.clone();
+        let weak_list = list.downgrade();
         remove_button.connect_clicked(move |_| {
-            let _ = remove_bookmark_page(&remove_path, remove_page);
+            if remove_bookmark_page(&remove_path, remove_page) {
+                if let (Some(list), Some(controller)) = (
+                    weak_list.upgrade(),
+                    remove_manager
+                        .upgrade()
+                        .and_then(|manager| manager.borrow().active_controller()),
+                ) {
+                    populate_app_bookmarks_list(&list, &controller);
+                }
+            }
         });
         row_box.append(&remove_button);
         row.set_child(Some(&row_box));
         list.append(&row);
+        if bookmark_page == current_page {
+            list.select_row(Some(&row));
+        }
     }
 }
 
