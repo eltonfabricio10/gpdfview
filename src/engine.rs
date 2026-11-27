@@ -510,6 +510,7 @@ fn load_document(path: &PathBuf) -> Result<Document, String> {
 
 pub fn document_properties(path: &PathBuf) -> Result<Vec<(String, String)>, String> {
     let document = load_document(path)?;
+    let guard = crate::poppler_lock::lock()?;
     let fallback_title = path
         .file_name()
         .and_then(|name| name.to_str())
@@ -565,6 +566,8 @@ pub fn document_properties(path: &PathBuf) -> Result<Vec<(String, String)>, Stri
         properties.push(("File size".to_string(), format!("{} bytes", metadata.len())));
     }
     properties.push(("File path".to_string(), path.display().to_string()));
+    drop(document);
+    drop(guard);
     Ok(properties)
 }
 

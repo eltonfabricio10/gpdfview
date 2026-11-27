@@ -74,7 +74,7 @@
 | Bounded page cache | IMPLEMENTADO | `src/cache.rs`, `src/app.rs` (128 MiB cap) | Measure cache hit rate and memory pressure |
 | Separate thumbnail cache | IMPLEMENTADO | `src/sidebar.rs` (24 MiB cap) | Async generation and virtualization |
 | Prefetch adjacent pages | IMPLEMENTADO | `src/engine.rs` pending/prefetch queue | Tune with measurement; prevent wasted work under rapid navigation |
-| Poppler concurrency contract | COM PROBLEMAS | `src/poppler_lock.rs` exists, but not every inspected Poppler operation uses it consistently | Centralize policy and document object/thread ownership |
+| Poppler concurrency contract | PARCIAL | `src/poppler_lock.rs`, `src/engine.rs` | Renderer, search, thumbnail, outline and properties operations hold the global lock while using Poppler objects; review all remaining helper paths and document destruction/ownership |
 | Search/thumbnail/outline not blocking GTK | COM PROBLEMAS | Synchronous call paths in `src/rendering.rs` and `src/sidebar.rs` | Move expensive work to cancellable workers |
 | Robust persistence and surfaced I/O errors | COM PROBLEMAS | Silent `let _ = fs::write(...)` in `src/session.rs` | Atomic writes, schema version, error telemetry and recovery tests |
 | Print scaling behavior | COM PROBLEMAS | Scale is applied while creating fallback PDF and again in CUPS options | Confirm and remove double scaling |
