@@ -260,14 +260,16 @@ pub struct DocumentTextMatch {
     pub rect: (f64, f64, f64, f64),
 }
 
-pub fn find_text_rectangles_in_document_cancellable<F>(
+pub fn find_text_rectangles_in_document_cancellable<F, P>(
     path: &PathBuf,
     query: &str,
     options: poppler::FindFlags,
     is_cancelled: F,
+    mut on_progress: P,
 ) -> Result<Vec<DocumentTextMatch>, String>
 where
     F: Fn() -> bool,
+    P: FnMut(i32, i32),
 {
     let trimmed = query.trim();
     if trimmed.is_empty() {
@@ -296,6 +298,7 @@ where
                 drop(page);
             }
             drop(guard);
+            on_progress(page_index + 1, page_count);
         }
         Ok(matches)
     })();

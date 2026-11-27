@@ -261,6 +261,23 @@ pub(crate) fn poll(controller: &ViewerController) {
                 .set_text(&format!("Print failed: {error}")),
         }
     }
+    let search_progress = controller
+        .search_progress_receiver
+        .borrow()
+        .try_iter()
+        .collect::<Vec<_>>();
+    for progress in search_progress {
+        let current_generation = controller.search_generation.load(Ordering::Relaxed);
+        let current_path = controller.state.borrow().path.clone();
+        if progress.generation == current_generation
+            && current_path.as_ref() == Some(&progress.path)
+        {
+            controller.status.set_text(&format!(
+                "Buscando página {} de {}…",
+                progress.current_page, progress.total_pages
+            ));
+        }
+    }
     let search_responses = controller
         .search_receiver
         .borrow()
@@ -333,6 +350,8 @@ pub(crate) fn search_current_page(controller: &ViewerController) {
     controller.area.queue_draw();
 
     let sender = controller.search_sender.clone();
+    let progress_sender = controller.search_progress_sender.clone();
+    let progress_path = path.clone();
     let cancellation_generation = controller.search_generation.clone();
     if let Err(error) = thread::Builder::new()
         .name("gpdfview-search".into())
@@ -342,6 +361,14 @@ pub(crate) fn search_current_page(controller: &ViewerController) {
                 &query,
                 options,
                 || cancellation_generation.load(Ordering::Relaxed) != generation,
+                |current_page, total_pages| {
+                    let _ = progress_sender.try_send(crate::app::SearchProgress {
+                        generation,
+                        path: progress_path.clone(),
+                        current_page,
+                        total_pages,
+                    });
+                },
             );
             let _ = sender.send(crate::app::SearchResponse {
                 generation,

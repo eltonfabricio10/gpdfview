@@ -57,6 +57,13 @@ pub(crate) struct SearchResponse {
     pub(crate) result: Result<Vec<crate::engine::DocumentTextMatch>, String>,
 }
 
+pub(crate) struct SearchProgress {
+    pub(crate) generation: u64,
+    pub(crate) path: PathBuf,
+    pub(crate) current_page: i32,
+    pub(crate) total_pages: i32,
+}
+
 #[cfg(test)]
 fn rotated_page_dimensions(width_points: f64, height_points: f64, rotation: i32) -> (f64, f64) {
     match normalize_rotation(rotation) {
@@ -116,6 +123,8 @@ pub(crate) struct ViewerController {
     pub(crate) shortcut_settings_hooks: Rc<RefCell<Vec<ShortcutSettingsHook>>>,
     pub(crate) search_sender: mpsc::Sender<SearchResponse>,
     pub(crate) search_receiver: Rc<RefCell<mpsc::Receiver<SearchResponse>>>,
+    pub(crate) search_progress_sender: mpsc::SyncSender<SearchProgress>,
+    pub(crate) search_progress_receiver: Rc<RefCell<mpsc::Receiver<SearchProgress>>>,
     pub(crate) search_generation: Arc<AtomicU64>,
 }
 

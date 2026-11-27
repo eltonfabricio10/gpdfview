@@ -886,6 +886,7 @@ pub(crate) fn create_document_controller(
     root.append(&status);
 
     let (search_sender, search_receiver) = std::sync::mpsc::channel();
+    let (search_progress_sender, search_progress_receiver) = std::sync::mpsc::sync_channel(1);
 
     let controller = Rc::new(ViewerController {
         app: app.clone(),
@@ -926,6 +927,8 @@ pub(crate) fn create_document_controller(
         shortcut_settings_hooks: Rc::new(RefCell::new(Vec::new())),
         search_sender,
         search_receiver: Rc::new(RefCell::new(search_receiver)),
+        search_progress_sender,
+        search_progress_receiver: Rc::new(RefCell::new(search_progress_receiver)),
         search_generation: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
     });
 
