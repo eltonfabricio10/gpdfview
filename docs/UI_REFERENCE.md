@@ -43,3 +43,18 @@ As capturas são referência de proporção e hierarquia, não uma especificaç�
 ## Roteiro de comparação do gpdfview
 
 Capturar e revisar, em dimensões equivalentes, estes estados: janela vazia; PDF aberto com miniaturas; página atual diferente da primeira; busca vazia e com resultado; painel de marcadores; painel de estrutura; propriedades; menus com e sem documento. Conferir geometria, contraste, seleção, estados desabilitados e correspondência entre o comando exibido e sua ação.
+
+## Comparação de implementação — 2026-11-26
+
+Esta revisão relaciona os estados das capturas ao código atual. É uma comparação de estrutura e comportamento descritos no código; a conferência de pixels e a execução interativa ainda precisam ser feitas em uma sessão gráfica controlada.
+
+| Estado da referência | Implementação atual | Resultado da revisão de código | Verificação restante |
+|---|---|---|---|
+| Janela vazia e menus | `src/window.rs`, `src/ui_commands.rs` | Menus Arquivo, Editar, Exibir, Abas, Marcadores e Ajuda; comandos dependentes de documento recebem sensibilidade conforme o PDF ativo. | Conferir largura, alinhamento, foco e estados visuais na janela real. |
+| Navegação e leitura | `src/window.rs`, `src/navigation.rs`, `src/sidebar.rs` | Barra de página/zoom, fundo escuro, página clara e painel de miniaturas à esquerda; miniaturas geradas com limite de workers. | Comparar dimensões, centralização, escala e resposta ao rolar. |
+| Busca e resultados | `src/window.rs`, `src/rendering.rs`, `src/sidebar.rs` | Busca recolhível na faixa inferior, opções de consulta, destaques e lista de resultados no painel auxiliar. | Conferir posição da faixa, realce sobre páginas e navegação entre ocorrências. |
+| Marcadores e estrutura | `src/sidebar.rs`, `src/session.rs`, `src/engine.rs` | Abas auxiliares para contorno, marcadores do usuário e navegação por página; seleção acompanha a página atual. | Conferir recuo, seleção, rolagem e comportamento com listas longas. |
+| Propriedades | `src/sidebar.rs`, `src/engine.rs`, `src/dialogs.rs` | Metadados em linhas, tamanho e caminho do arquivo no painel e na janela de propriedades. | Comparar a hierarquia visual e conferir PDFs com metadados extensos. |
+| Preferências | `src/dialogs.rs` | Categorias para visualização e atalhos; opções de layout exibidas em português. | Conferir altura, rolagem, foco e legibilidade em janela estreita. |
+
+As diferenças intencionais em relação às capturas do qpdfview são os rótulos localizados, o uso de controles GTK/libadwaita e a divisão dos conteúdos auxiliares em abas. Esta revisão não declara equivalência visual final nem validação manual da aplicação.
