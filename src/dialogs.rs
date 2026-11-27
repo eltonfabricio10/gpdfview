@@ -314,7 +314,9 @@ pub(crate) fn build_settings_dialog(
             std::path::Path::new(&home),
             &next_settings,
         ) {
-            settings_error_for_save.set_text(&error);
+            settings_error_for_save.set_text(&format!(
+                "Não foi possível salvar as configurações: {error}"
+            ));
             settings_error_for_save.set_visible(true);
             return;
         }

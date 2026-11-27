@@ -213,5 +213,6 @@ This follow-up implements the smaller UI improvements identified from `/home/elt
 | 33 | Localize primary toolbar, dialog and file-picker labels | This follow-up |
 | 34 | Localize the print dialog and sidebar loading/navigation text | This follow-up |
 | 35 | Localize search/render status and empty-canvas text | This follow-up |
+| 36 | Localize remaining page-status, fallback and save-error messages | This follow-up |
 
 The runtime screenshot comparison remains open. This environment did not provide a controlled gpdfview window for capture during this pass, so `docs/UI_REFERENCE.md` records source-level findings and the exact visual checks still needed.

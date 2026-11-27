@@ -186,7 +186,7 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
         .zoom_button
         .set_label(&format!("{:.0}%", controller.state.borrow().scale * 100.0));
     controller.status.set_text(&format!(
-        "Page {} of {} · {} × {} pt · rendered in {:.0} ms · cache {} MiB",
+        "Página {} de {} · {} × {} pt · renderizada em {:.0} ms · cache {} MiB",
         page.page_index + 1,
         page.page_count,
         page.page_width_points.round(),

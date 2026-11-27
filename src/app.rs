@@ -260,7 +260,7 @@ impl ViewerController {
         let filename = path
             .file_name()
             .and_then(|name| name.to_str())
-            .unwrap_or("PDF document");
+            .unwrap_or("Documento PDF");
         self.title.set_text(filename);
 
         {

@@ -425,7 +425,7 @@ fn populate_outline_result(
 ) {
     match result {
         Ok(entries) if entries.is_empty() => {
-            append_outline_message(list, "Este PDF não tem um contorno navegável.");
+            append_outline_message(list, "Este PDF não tem um sumário navegável.");
         }
         Ok(entries) => {
             let current_page = controller.state.borrow().page_index;

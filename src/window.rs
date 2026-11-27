@@ -880,7 +880,7 @@ pub(crate) fn create_document_controller(
         .build();
     root.append(&scrolled);
 
-    let status = gtk::Label::new(Some("Open a PDF document to begin"));
+    let status = gtk::Label::new(Some("Abra um PDF para começar"));
     status.set_xalign(0.0);
     status.set_margin_start(12);
     status.set_margin_end(12);
