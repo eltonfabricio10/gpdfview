@@ -7,6 +7,11 @@ use std::rc::Weak;
 
 use crate::app::ViewerController;
 
+type ActiveControllerHook = Rc<dyn Fn(Rc<ViewerController>)>;
+type ActiveControllerHooks = Rc<RefCell<Vec<ActiveControllerHook>>>;
+
+type Controllers = Rc<RefCell<HashMap<usize, Rc<ViewerController>>>>;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct TabMetadata {
     title: String,
@@ -19,8 +24,8 @@ pub struct DocumentTabManager {
     // Metadata is keyed by the stable GTK page identity, not by notebook index.
     // Notebook pages can be reordered without changing the identity of the page.
     tabs: Rc<RefCell<HashMap<usize, TabMetadata>>>,
-    controllers: Rc<RefCell<HashMap<usize, Rc<ViewerController>>>>,
-    active_controller_hooks: Rc<RefCell<Vec<Rc<dyn Fn(Rc<ViewerController>)>>>>,
+    controllers: Controllers,
+    active_controller_hooks: ActiveControllerHooks,
     recently_closed: Rc<RefCell<Vec<TabMetadata>>>,
     #[cfg(test)]
     model_tabs: Rc<RefCell<Vec<TabMetadata>>>,
@@ -52,8 +57,8 @@ fn remove_page(
     notebook: &gtk4::Notebook,
     page: &gtk4::Widget,
     tabs: &Rc<RefCell<HashMap<usize, TabMetadata>>>,
-    controllers: &Rc<RefCell<HashMap<usize, Rc<ViewerController>>>>,
-    active_controller_hooks: &Rc<RefCell<Vec<Rc<dyn Fn(Rc<ViewerController>)>>>>,
+    controllers: &Controllers,
+    active_controller_hooks: &ActiveControllerHooks,
     recently_closed: &Rc<RefCell<Vec<TabMetadata>>>,
 ) -> bool {
     let Some(page_index) = notebook.page_num(page) else {
@@ -62,7 +67,7 @@ fn remove_page(
     let was_active = notebook
         .current_page()
         .and_then(|index| notebook.nth_page(Some(index)))
-        .is_some_and(|current| current.as_ptr() as usize == page.as_ptr() as usize);
+        .is_some_and(|current| std::ptr::eq(current.as_ptr(), page.as_ptr()));
 
     let key = page.as_ptr() as usize;
     if let Some(metadata) = tabs.borrow_mut().remove(&key) {
@@ -97,8 +102,7 @@ fn remove_page(
 impl DocumentTabManager {
     pub fn new(notebook: gtk4::Notebook) -> Self {
         let controllers = Rc::new(RefCell::new(HashMap::new()));
-        let active_controller_hooks =
-            Rc::new(RefCell::new(Vec::<Rc<dyn Fn(Rc<ViewerController>)>>::new()));
+        let active_controller_hooks = Rc::new(RefCell::new(Vec::<ActiveControllerHook>::new()));
         let weak_controllers: Weak<RefCell<HashMap<usize, Rc<ViewerController>>>> =
             Rc::downgrade(&controllers);
         let weak_hooks = Rc::downgrade(&active_controller_hooks);
@@ -283,7 +287,9 @@ impl DocumentTabManager {
             notebook
                 .current_page()
                 .and_then(|index| notebook.nth_page(Some(index)))
-                .is_some_and(|current| current.as_ptr() as usize == page.as_ptr() as usize)
+                .is_some_and(|current| {
+                    std::ptr::eq(current.as_ptr(), page.upcast_ref::<gtk4::Widget>().as_ptr())
+                })
         });
         if is_current {
             update_active_header(&controller);
