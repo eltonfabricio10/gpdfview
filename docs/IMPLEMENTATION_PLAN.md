@@ -236,5 +236,6 @@ This follow-up implements the smaller UI improvements identified from `/home/elt
 | 56 | Reset scroll offset when leaving continuous mode | This follow-up |
 | 57 | Start thumbnail list at the entered page number | This follow-up |
 | 58 | Hide unavailable thumbnail paging controls | This follow-up |
+| 59 | Use a dedicated empty-state page indicator | This follow-up |
 
 The runtime screenshot comparison remains open. This environment did not provide a controlled gpdfview window for capture during this pass, so `docs/UI_REFERENCE.md` records source-level findings and the exact visual checks still needed.

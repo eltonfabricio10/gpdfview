@@ -817,8 +817,14 @@ pub(crate) fn create_document_controller(
     previous_button.set_sensitive(false);
     let page_spin = gtk::SpinButton::with_range(1.0, 1.0, 1.0);
     page_spin.set_sensitive(false);
-    page_spin.set_text("—");
     page_spin.set_width_chars(5);
+    let page_indicator = gtk::Stack::new();
+    page_indicator.set_transition_duration(0);
+    let empty_page_indicator = gtk::Label::new(Some("—"));
+    empty_page_indicator.set_width_chars(5);
+    page_indicator.add_named(&empty_page_indicator, Some("empty"));
+    page_indicator.add_named(&page_spin, Some("page"));
+    page_indicator.set_visible_child_name("empty");
     let page_total = gtk::Label::new(Some("/ 0"));
     let next_button = action_button("go-next-symbolic", "Próxima página");
     next_button.set_sensitive(false);
@@ -870,7 +876,7 @@ pub(crate) fn create_document_controller(
     search_bar.set_visible(false);
 
     toolbar.append(&previous_button);
-    toolbar.append(&page_spin);
+    toolbar.append(&page_indicator);
     toolbar.append(&page_total);
     toolbar.append(&next_button);
     toolbar.append(&search_open_button);
@@ -924,6 +930,7 @@ pub(crate) fn create_document_controller(
         scrolled,
         previous_button: previous_button.clone(),
         page_spin,
+        page_indicator,
         suppress_spin_events: Rc::new(Cell::new(false)),
         page_total,
         next_button: next_button.clone(),

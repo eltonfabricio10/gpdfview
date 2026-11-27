@@ -21,7 +21,7 @@
 | Open multiple files from a GApplication open request | IMPLEMENTADO | `src/app.rs::run` iterates the supplied `files` and opens each local PDF in a tab | Worker initialization failures now appear in the status bar; verify multiple files and mixed valid/unsupported paths from the desktop launcher |
 | Tabbed documents | IMPLEMENTADO | `src/document_tabs.rs`, `src/document_actions.rs`, `src/window.rs` resolve the active controller for shared actions and use one shared print handler; tab close tooltip is localized | Verify close, reopen, print and sidebar behavior across several live tabs |
 | Reorder tabs and close correct document | IMPLEMENTADO | `src/document_tabs.rs` keys tab metadata and controllers by stable notebook page identity | Exercise drag reorder followed by close and restore in the GUI |
-| Page navigation and page-number entry | IMPLEMENTADO | `src/navigation.rs`, `src/window.rs`, `src/app.rs` | Page field shows an em dash with no open PDF instead of the misleading 1 / 0; GUI boundary tests and invalid input handling remain |
+| Page navigation and page-number entry | IMPLEMENTADO | `src/navigation.rs`, `src/window.rs`, `src/app.rs`, `src/rendering.rs` | A dedicated empty-state indicator shows an em dash when no document is open or the initial PDF render fails; GUI boundary tests and invalid input handling remain |
 | Zoom in/out and custom zoom value | IMPLEMENTADO | `src/navigation.rs`, `src/window.rs` | High-DPI and rapid zoom regression tests |
 | Fit width / fit page | IMPLEMENTADO | `src/layout.rs`, `src/navigation.rs` | Mixed page sizes and viewport changes |
 | Page rotation | IMPLEMENTADO | `src/navigation.rs`, `src/viewer_state.rs` | Verify all layout modes and per-document restore |

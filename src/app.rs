@@ -100,6 +100,7 @@ pub(crate) struct ViewerController {
     pub(crate) scrolled: gtk::ScrolledWindow,
     pub(crate) previous_button: gtk::Button,
     pub(crate) page_spin: gtk::SpinButton,
+    pub(crate) page_indicator: gtk::Stack,
     pub(crate) suppress_spin_events: Rc<Cell<bool>>,
     pub(crate) page_total: gtk::Label,
     pub(crate) next_button: gtk::Button,
@@ -154,7 +155,7 @@ impl ViewerController {
         state.pending_search_rect = None;
         drop(state);
         self.page_spin.set_sensitive(false);
-        self.page_spin.set_text("—");
+        self.page_indicator.set_visible_child_name("empty");
         self.previous_button.set_sensitive(false);
         self.next_button.set_sensitive(false);
         self.zoom_button.set_sensitive(false);
@@ -255,6 +256,7 @@ impl ViewerController {
         self.next_button.set_sensitive(false);
         self.zoom_button.set_sensitive(false);
         self.set_page_spin_value(1.0);
+        self.page_indicator.set_visible_child_name("page");
         self.page_total.set_text("/ …");
         self.zoom_button.set_label("100%");
         self.print_button.set_sensitive(true);
@@ -416,6 +418,11 @@ impl ViewerController {
 
     pub(crate) fn show_error(&self, error: RenderError) {
         if error.generation == self.state.borrow().generation {
+            if self.state.borrow().page_count <= 0 {
+                self.page_indicator.set_visible_child_name("empty");
+                self.page_spin.set_sensitive(false);
+                self.page_total.set_text("/ 0");
+            }
             self.status.set_text(&format!(
                 "Não foi possível renderizar o PDF: {}",
                 error.message

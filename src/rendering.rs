@@ -184,6 +184,7 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
     controller
         .page_spin
         .set_range(1.0, f64::from(page.page_count.max(1)));
+    controller.page_indicator.set_visible_child_name("page");
     controller.set_page_spin_value(f64::from(page.page_index + 1));
     controller.page_spin.set_sensitive(page.page_count > 0);
     controller.zoom_button.set_sensitive(page.page_count > 0);
