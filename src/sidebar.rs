@@ -1,6 +1,6 @@
 use gtk4::prelude::*;
 use libadwaita as adw;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
@@ -24,6 +24,14 @@ const THUMBNAIL_CACHE_BYTES: usize = 24 * 1024 * 1024;
 const THUMBNAIL_FRAME_WIDTH: i32 = 112;
 const THUMBNAIL_FRAME_HEIGHT: i32 = 156;
 const MAX_THUMBNAIL_WORKERS: usize = 3;
+const THUMBNAIL_WINDOW_SIZE: i32 = 9;
+
+#[derive(Default)]
+struct ThumbnailWindowState {
+    start: Cell<i32>,
+    path: RefCell<Option<PathBuf>>,
+    current_page: Cell<i32>,
+}
 
 struct ThumbnailWorkerPermit(Arc<AtomicUsize>);
 
@@ -77,12 +85,12 @@ fn page_range_for_sidebar(page_count: i32, current_page: i32) -> Vec<i32> {
         return Vec::new();
     }
 
-    if page_count <= 9 {
+    if page_count <= THUMBNAIL_WINDOW_SIZE {
         return (0..page_count).collect();
     }
 
-    let start = (current_page - 4).max(0);
-    let end = (current_page + 4).min(page_count - 1);
+    let start = (current_page - THUMBNAIL_WINDOW_SIZE / 2).max(0);
+    let end = (start + THUMBNAIL_WINDOW_SIZE - 1).min(page_count - 1);
     (start..=end).collect()
 }
 
@@ -312,6 +320,9 @@ fn populate_pages_flow(
     thumbnail_cache: &Rc<RefCell<LruCache<RenderKey, gtk4::cairo::ImageSurface>>>,
     thumbnail_generation: &Arc<AtomicU64>,
     active_thumbnail_workers: &Arc<AtomicUsize>,
+    window_state: &Rc<ThumbnailWindowState>,
+    previous_window_button: &gtk4::Button,
+    next_window_button: &gtk4::Button,
 ) {
     let generation_id = thumbnail_generation.fetch_add(1, Ordering::Relaxed) + 1;
     while let Some(child) = pages_flow.first_child() {
@@ -319,7 +330,37 @@ fn populate_pages_flow(
     }
 
     let state = controller.state.borrow();
-    let visible_pages = page_range_for_sidebar(state.page_count, state.page_index);
+    let page_count = state.page_count;
+    let current_page = state.page_index;
+    let path = state.path.clone();
+    drop(state);
+
+    let start = {
+        let mut window = window_state.path.borrow_mut();
+        let first_page = window_state.start.get();
+        let window_end = first_page + THUMBNAIL_WINDOW_SIZE;
+        let path_changed = *window != path;
+        let page_changed = window_state.current_page.replace(current_page) != current_page;
+        if path_changed
+            || (page_changed && (current_page < first_page || current_page >= window_end))
+        {
+            *window = path;
+            window_state.start.set(
+                page_range_for_sidebar(page_count, current_page)
+                    .first()
+                    .copied()
+                    .unwrap_or(0),
+            );
+        }
+        let max_start = (page_count - THUMBNAIL_WINDOW_SIZE).max(0);
+        let start = window_state.start.get().clamp(0, max_start);
+        window_state.start.set(start);
+        start
+    };
+    previous_window_button.set_sensitive(start > 0);
+    next_window_button.set_sensitive(start + THUMBNAIL_WINDOW_SIZE < page_count);
+    let visible_pages =
+        (start..(start + THUMBNAIL_WINDOW_SIZE).min(page_count)).collect::<Vec<_>>();
     if visible_pages.is_empty() {
         let placeholder = gtk4::Label::new(Some("Carregando miniaturas…"));
         placeholder.set_xalign(0.0);
@@ -339,11 +380,38 @@ fn populate_pages_flow(
             active_thumbnail_workers.clone(),
             generation_id,
             page_index,
-            page_index == state.page_index,
+            page_index == current_page,
         );
         page_button.set_size_request(THUMBNAIL_FRAME_WIDTH + 28, -1);
         pages_flow.insert(&page_button, -1);
     }
+}
+
+fn shift_thumbnail_window(
+    direction: i32,
+    pages_flow: &gtk4::FlowBox,
+    controller: &ViewerController,
+    thumbnail_cache: &Rc<RefCell<LruCache<RenderKey, gtk4::cairo::ImageSurface>>>,
+    thumbnail_generation: &Arc<AtomicU64>,
+    active_thumbnail_workers: &Arc<AtomicUsize>,
+    window_state: &Rc<ThumbnailWindowState>,
+    previous_window_button: &gtk4::Button,
+    next_window_button: &gtk4::Button,
+) {
+    let page_count = controller.state.borrow().page_count;
+    let max_start = (page_count - THUMBNAIL_WINDOW_SIZE).max(0);
+    let start = (window_state.start.get() + direction * THUMBNAIL_WINDOW_SIZE).clamp(0, max_start);
+    window_state.start.set(start);
+    populate_pages_flow(
+        pages_flow,
+        controller,
+        thumbnail_cache,
+        thumbnail_generation,
+        active_thumbnail_workers,
+        window_state,
+        previous_window_button,
+        next_window_button,
+    );
 }
 
 fn populate_outline_list(
@@ -746,6 +814,14 @@ pub fn build_sidebar(
     panel_title.set_xalign(0.0);
     panel_title.set_hexpand(true);
     panel_header.append(&panel_title);
+    let previous_window_button = gtk4::Button::from_icon_name("go-up-symbolic");
+    previous_window_button.set_has_frame(false);
+    previous_window_button.set_tooltip_text(Some("Mostrar o bloco anterior de páginas"));
+    panel_header.append(&previous_window_button);
+    let next_window_button = gtk4::Button::from_icon_name("go-down-symbolic");
+    next_window_button.set_has_frame(false);
+    next_window_button.set_tooltip_text(Some("Mostrar o próximo bloco de páginas"));
+    panel_header.append(&next_window_button);
     let close_button = gtk4::Button::from_icon_name("window-close-symbolic");
     close_button.set_has_frame(false);
     close_button.set_tooltip_text(Some("Ocultar painel"));
@@ -823,13 +899,46 @@ pub fn build_sidebar(
     let thumbnail_cache = Rc::new(RefCell::new(LruCache::new(THUMBNAIL_CACHE_BYTES)));
     let thumbnail_generation = Arc::new(AtomicU64::new(0));
     let active_thumbnail_workers = Arc::new(AtomicUsize::new(0));
+    let thumbnail_window_state = Rc::new(ThumbnailWindowState::default());
     populate_pages_flow(
         &pages_flow,
         &controller,
         &thumbnail_cache,
         &thumbnail_generation,
         &active_thumbnail_workers,
+        &thumbnail_window_state,
+        &previous_window_button,
+        &next_window_button,
     );
+    for (button, direction) in [(&previous_window_button, -1), (&next_window_button, 1)] {
+        let pages_flow = pages_flow.clone();
+        let thumbnail_cache = thumbnail_cache.clone();
+        let thumbnail_generation = thumbnail_generation.clone();
+        let active_thumbnail_workers = active_thumbnail_workers.clone();
+        let thumbnail_window_state = thumbnail_window_state.clone();
+        let previous_window_button = previous_window_button.clone();
+        let next_window_button = next_window_button.clone();
+        let manager = Rc::downgrade(&tab_manager);
+        button.connect_clicked(move |_| {
+            let Some(controller) = manager
+                .upgrade()
+                .and_then(|manager| manager.borrow().active_controller())
+            else {
+                return;
+            };
+            shift_thumbnail_window(
+                direction,
+                &pages_flow,
+                &controller,
+                &thumbnail_cache,
+                &thumbnail_generation,
+                &active_thumbnail_workers,
+                &thumbnail_window_state,
+                &previous_window_button,
+                &next_window_button,
+            );
+        });
+    }
     let thumbnails_section = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     thumbnails_section.append(&pages_flow);
     sidebar.append(&thumbnails_section);
@@ -961,6 +1070,9 @@ pub fn build_sidebar(
     let active_thumbnail_cache = thumbnail_cache.clone();
     let active_thumbnail_generation = thumbnail_generation.clone();
     let active_thumbnail_workers = active_thumbnail_workers.clone();
+    let active_thumbnail_window_state = thumbnail_window_state.clone();
+    let active_previous_window_button = previous_window_button.clone();
+    let active_next_window_button = next_window_button.clone();
     let observed_controllers = Rc::new(RefCell::new(std::collections::HashSet::new()));
     let weak_tab_manager = Rc::downgrade(&tab_manager);
     tab_manager
@@ -972,6 +1084,9 @@ pub fn build_sidebar(
                 &active_thumbnail_cache,
                 &active_thumbnail_generation,
                 &active_thumbnail_workers,
+                &active_thumbnail_window_state,
+                &active_previous_window_button,
+                &active_next_window_button,
             );
             populate_outline_list(
                 &active_outline,
@@ -1001,6 +1116,9 @@ pub fn build_sidebar(
             let cache = active_thumbnail_cache.clone();
             let thumbnail_generation = active_thumbnail_generation.clone();
             let thumbnail_workers = active_thumbnail_workers.clone();
+            let thumbnail_window_state = active_thumbnail_window_state.clone();
+            let previous_window_button = active_previous_window_button.clone();
+            let next_window_button = active_next_window_button.clone();
             let manager = weak_tab_manager.clone();
             let properties_path =
                 Rc::new(RefCell::new(active_controller.state.borrow().path.clone()));
@@ -1025,6 +1143,9 @@ pub fn build_sidebar(
                     &cache,
                     &thumbnail_generation,
                     &thumbnail_workers,
+                    &thumbnail_window_state,
+                    &previous_window_button,
+                    &next_window_button,
                 );
                 populate_outline_list(&outline, controller.clone(), outline_generation.clone());
                 populate_search_results_list(&search, &controller);
