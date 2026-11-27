@@ -1032,10 +1032,10 @@ pub fn run() {
 pub(crate) fn new_worker_pair() -> Result<(Rc<PdfRenderer>, Rc<PrintService>), String> {
     let renderer = PdfRenderer::new()
         .map(Rc::new)
-        .map_err(|error| format!("Could not start PDF renderer: {error}"))?;
+        .map_err(|error| format!("Não foi possível iniciar o renderizador de PDF: {error}"))?;
     let printer = PrintService::new()
         .map(Rc::new)
-        .map_err(|error| format!("Could not start print worker: {error}"))?;
+        .map_err(|error| format!("Não foi possível iniciar o serviço de impressão: {error}"))?;
     Ok((renderer, printer))
 }
 
