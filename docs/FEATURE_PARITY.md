@@ -1,8 +1,8 @@
 # Feature parity: gpdfview vs qpdfview
 
-**Audit date:** 2026-11-03  
-**Source of truth:** this matrix supersedes the older root-level matrix and historical sprint notes.  
-**Scope note:** statuses describe source-level evidence in the audited ZIP. `IMPLEMENTADO` means a code path exists for the feature; it does not imply full user-interface, regression, performance or backend validation. Runtime verification is still required.
+**Audit date:** 2026-11-26
+**Source of truth:** this matrix supersedes the older root-level matrix and historical sprint notes.
+**Scope note:** statuses describe source-level evidence in the current checkout. `IMPLEMENTADO` means a code path exists for the feature; it does not imply full user-interface, regression, performance or backend validation. Runtime verification is still required.
 
 ## Status definitions
 
@@ -31,7 +31,7 @@
 | Split view | PARCIAL | `SplitViewMode`, `src/viewer_state.rs`, `src/window.rs`, `src/ui_commands.rs` | Independent pane navigation/scroll state and clear sync semantics |
 | Fullscreen | IMPLEMENTADO | `src/window.rs`, `src/app.rs` | Manual desktop and keyboard regression tests |
 | Presentation mode | IMPLEMENTADO | `src/app.rs`, `src/window.rs`, `src/navigation.rs` | Verify navigation, exit behavior and multi-monitor behavior |
-| Document properties | PARCIAL | `src/dialogs.rs`, `src/engine.rs` | Broader metadata, page size/count, security and font details |
+| Document properties | PARCIAL | `src/dialogs.rs`, `src/engine.rs`, `src/sidebar.rs` | PDF metadata, page count/version, file size/path, modal and auxiliary panel are implemented; security, page dimensions and font details remain absent |
 
 ## Search, navigation panels and document state
 
@@ -49,7 +49,7 @@
 | Persist page, zoom, rotation and layout per document | IMPLEMENTADO | `src/session.rs`, `src/app.rs` | Atomic writes, versioned storage and file identity/invalidation |
 | Restore every previously open tab/session | PARCIAL | `src/session.rs`, `src/app.rs` | Current startup restore is centered on the last document, not a full multi-tab session |
 | Settings for default layout, split sync and zoom step | IMPLEMENTADO | `src/session.rs`, `src/dialogs.rs` | Schema/versioning and malformed-value tests |
-| Configurable keyboard shortcuts | PARCIAL | `src/keyboard.rs`, `src/dialogs.rs`, `src/session.rs` | Settings UI exposes a subset; validate conflicts and full action coverage |
+| Configurable keyboard shortcuts | PARCIAL | `src/keyboard.rs`, `src/dialogs.rs`, `src/session.rs`, `src/window.rs` | All 12 mapped actions have editable fields; empty, invalid and duplicate combinations are rejected; menu hints load saved values at startup. Runtime behavior and visible hint refresh after saving still need GUI verification |
 | Configurable toolbars | AUSENTE | No equivalent model/UI found | Add action model and persistence if desired |
 
 ## Printing and document formats
@@ -81,6 +81,17 @@
 | Benchmark first-visible-page latency and app RSS | COM PROBLEMAS | `scripts/benchmark.sh` samples `timeout` wrapper after fixed sleep | Replace harness; invalidate old TSV as a comparable baseline |
 | PDF password prompt | AUSENTE | Loading paths pass no password to `Document::from_file` | Implement secure password flow if required |
 | Handling malformed PDFs and resource limits | PARCIAL | Some errors are returned, but comprehensive hostile-file/resource tests are absent | Fuzz/safety tests, limits and robust error UX |
+
+## UI parity follow-up — 2026-11-26
+
+| Area | Current implementation | Remaining validation |
+|---|---|---|
+| Menus | Portuguese labels, document-aware sensitivity, boundary-aware first/last page actions, restorable-tab availability and shortcut hints | Check menu geometry, accessibility names, and action feedback in a running GTK session |
+| Reading layout | Dark canvas, light page, document toolbar, left thumbnail panel, auxiliary panels, and bottom search bar | Compare screenshots at the reference's approximate 1360 × 725 size and 50% zoom |
+| Auxiliary panels | Outline, search results, recents, favorites, user bookmarks and properties | Validate narrow windows, long lists and switching documents visually |
+| Preferences | Separate document-view and keyboard-shortcut categories; Portuguese layout choices; validation for shortcut conflicts | Exercise save/cancel and confirm menu hint refresh after shortcut edits |
+
+The visual review in [`UI_REFERENCE.md`](UI_REFERENCE.md) is source-based and maps reference states to implementation files. It is not a pixel comparison or a manual application run.
 
 ## qpdfview reference scope
 

@@ -4,14 +4,13 @@
 
 ## Execution contract
 
-- Execute one block per approved cycle.
-- Before each block: diagnose the relevant code and list the files/risks.
-- Implement only that block's scope; do not rewrite unrelated modules.
-- Run formatting, compilation, tests and clippy in a configured Rust/GTK/Poppler environment.
-- Run UI/manual tests when a code-only test is insufficient.
-- Update `README.md`, `docs/FEATURE_PARITY.md` and architecture notes when behavior changes.
+- Keep each bounded improvement in its own commit and push it immediately after review.
+- When the project owner asks to continue, proceed to the next planned improvement after each successful push.
+- Before each code block, inspect the affected code and likely integration risks.
+- Run formatting and compilation after code changes; keep compiler output free of warnings.
+- Run tests, clippy and manual UI checks when requested or when the change needs that evidence; record checks that could not be performed.
+- Update the reference and parity documents as implementation changes.
 - Report exact commands, pass/fail results, skipped checks and known limitations.
-- Stop after the block report. Do not begin the next block without explicit authorization.
 
 ## Recommended order
 
@@ -184,3 +183,20 @@ The block numbers remain those from the project owner's directive. The execution
 ## Current blockers to track from the audit
 
 See [`PROJECT_AUDIT.md`](PROJECT_AUDIT.md) for detailed code evidence. The immediate blockers are: active-tab command routing, tab reorder metadata, GApplication multi-file open, Poppler threading policy, synchronous UI work, print fallback scaling, silent persistence errors, invalid benchmark methodology and Poppler/license compatibility review.
+
+## UI parity follow-up — completed through source review
+
+This follow-up implements the smaller UI improvements identified from `/home/elton/Downloads/qpdfview/img`. Every row is a separate pushed commit; the entries below document the delivered scope, not a claim of pixel-perfect parity.
+
+| Step | Scope | Commit |
+|---:|---|---|
+| 13 | Improve PDF outline navigation and active-page selection | `5321a21` |
+| 14 | Add structured PDF properties to the auxiliary panel | `c3af020` |
+| 15 | Review Portuguese menu labels and command availability | `bc5bff4` |
+| 16 | Display configured shortcuts in menus | `4b0c719` |
+| 17 | Group preferences into document-view and shortcut categories | `54387b5` |
+| 18 | Complete shortcut fields and reject invalid or duplicate combinations | `55eff4b` |
+| 19 | Map reference screenshots to current implementation in the UI guide | `2e4ec2f` |
+| 20 | Refresh the parity matrix and execution plan | This documentation update |
+
+The runtime screenshot comparison remains open. This environment did not provide a controlled gpdfview window for capture during this pass, so `docs/UI_REFERENCE.md` records source-level findings and the exact visual checks still needed.
