@@ -252,13 +252,25 @@ pub(crate) fn poll(controller: &ViewerController) {
             RenderResult::Error(error) => controller.show_error(error),
         }
     }
-    while let Ok(result) = controller.printer.try_recv() {
-        controller.print_button.set_sensitive(true);
-        match result {
-            Ok(outcome) => controller.status.set_text(&outcome.message),
-            Err(error) => controller
-                .status
-                .set_text(&format!("Falha na impressão: {error}")),
+    loop {
+        match controller.printer.try_recv() {
+            Ok(result) => {
+                controller.print_button.set_sensitive(true);
+                match result {
+                    Ok(outcome) => controller.status.set_text(&outcome.message),
+                    Err(error) => controller
+                        .status
+                        .set_text(&format!("Falha na impressão: {error}")),
+                }
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => break,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                controller.print_button.set_sensitive(true);
+                controller
+                    .status
+                    .set_text("O serviço de impressão foi interrompido. Reinicie o aplicativo para tentar novamente.");
+                break;
+            }
         }
     }
     let search_progress = controller

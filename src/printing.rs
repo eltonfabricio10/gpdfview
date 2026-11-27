@@ -55,6 +55,7 @@ pub struct PrintService {
     requests: SyncSender<PrintCommand>,
     responses: Receiver<Result<PrintOutcome, String>>,
     stopped: Arc<AtomicBool>,
+    responses_disconnected: AtomicBool,
 }
 
 impl PrintService {
@@ -89,6 +90,7 @@ impl PrintService {
             requests: request_tx,
             responses,
             stopped,
+            responses_disconnected: AtomicBool::new(false),
         })
     }
 
@@ -105,7 +107,14 @@ impl PrintService {
     }
 
     pub fn try_recv(&self) -> Result<Result<PrintOutcome, String>, mpsc::TryRecvError> {
-        self.responses.try_recv()
+        match self.responses.try_recv() {
+            Err(mpsc::TryRecvError::Disconnected)
+                if self.responses_disconnected.swap(true, Ordering::Relaxed) =>
+            {
+                Err(mpsc::TryRecvError::Empty)
+            }
+            result => result,
+        }
     }
 
     pub fn shutdown(&self) {
