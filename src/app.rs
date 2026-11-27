@@ -122,6 +122,8 @@ pub(crate) struct ViewerController {
     pub(crate) toolbar_host: gtk::Box,
     pub(crate) search_host: gtk::Box,
     pub(crate) search_bar: gtk::Box,
+    pub(crate) menu_bar: gtk::Box,
+    pub(crate) header: gtk::HeaderBar,
     pub(crate) window: adw::ApplicationWindow,
     pub(crate) root: gtk::Box,
     pub(crate) state_change_hooks: Rc<RefCell<Vec<StateChangeHook>>>,
@@ -1047,6 +1049,8 @@ pub fn run() {
                     print_button: controller.print_button.clone(),
                     toolbar_host: controller.toolbar_host.clone(),
                     search_host: controller.search_host.clone(),
+                    menu_bar: controller.menu_bar.clone(),
+                    header: controller.header.clone(),
                 },
                 path,
             ) {

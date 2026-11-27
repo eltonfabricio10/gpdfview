@@ -67,20 +67,38 @@ pub(crate) fn handle_key_action(controller: &ViewerController, action: KeyAction
 pub(crate) fn toggle_fullscreen(controller: &ViewerController) {
     if controller.window.is_fullscreen() {
         controller.window.unfullscreen();
+        controller.header.set_visible(true);
+        controller.menu_bar.set_visible(true);
+        controller.toolbar_host.set_visible(true);
+        controller.status.set_visible(true);
     } else {
+        controller.header.set_visible(false);
         controller.window.fullscreen();
     }
 }
 
 pub(crate) fn toggle_presentation_mode(controller: &ViewerController) {
-    let is_visible = controller.toolbar.is_visible();
-    controller.toolbar.set_visible(!is_visible);
-    controller.status.set_visible(!is_visible);
-    if is_visible {
+    let entering = controller.toolbar_host.is_visible() || controller.status.is_visible();
+    controller.header.set_visible(!entering);
+    controller.menu_bar.set_visible(!entering);
+    controller.toolbar_host.set_visible(!entering);
+    controller
+        .search_host
+        .set_visible(!entering && controller.search_bar.is_visible());
+    controller.status.set_visible(!entering);
+    if entering {
         controller.window.fullscreen();
     } else {
         controller.window.unfullscreen();
+        controller.header.set_visible(true);
+        controller.menu_bar.set_visible(true);
+        controller.toolbar_host.set_visible(true);
+        controller
+            .search_host
+            .set_visible(controller.search_bar.is_visible());
+        controller.status.set_visible(true);
     }
+    controller.area.queue_draw();
 }
 
 pub(crate) fn navigate_to(controller: &ViewerController, page_index: i32) {

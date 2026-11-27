@@ -118,7 +118,23 @@ pub(crate) fn build_settings_dialog(
     dialog.set_title(Some("Preferências"));
     dialog.set_transient_for(Some(parent));
     dialog.set_modal(true);
-    dialog.set_default_size(560, 580);
+    let (max_width, max_height) = parent
+        .as_ref()
+        .surface()
+        .and_then(|surface| {
+            surface
+                .display()
+                .monitor_at_surface(&surface)
+                .map(|monitor| monitor.geometry())
+        })
+        .map(|geometry| {
+            (
+                (geometry.width() - 48).max(360),
+                (geometry.height() - 48).max(320),
+            )
+        })
+        .unwrap_or((960, 760));
+    dialog.set_default_size(560.min(max_width), 580.min(max_height));
 
     let content = gtk::Box::new(gtk::Orientation::Vertical, 10);
     content.set_margin_top(12);
@@ -245,8 +261,6 @@ pub(crate) fn build_settings_dialog(
     save_button.add_css_class("suggested-action");
     actions_row.append(&cancel_button);
     actions_row.append(&save_button);
-    content.append(&actions_row);
-
     let dialog_for_cancel = dialog.clone();
     let dialog_for_save = dialog.clone();
     let controller_for_save = controller.clone();
@@ -329,6 +343,16 @@ pub(crate) fn build_settings_dialog(
         dialog_for_cancel.close();
     });
 
-    dialog.set_child(Some(&content));
+    let scrolled = gtk::ScrolledWindow::new();
+    scrolled.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+    scrolled.set_vexpand(true);
+    scrolled.set_hexpand(true);
+    scrolled.set_child(Some(&content));
+
+    let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    root.append(&scrolled);
+    root.append(&actions_row);
+
+    dialog.set_child(Some(&root));
     dialog
 }

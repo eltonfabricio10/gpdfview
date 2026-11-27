@@ -42,12 +42,15 @@ pub(crate) struct DocumentControllerParams<'a> {
     pub print_button: gtk::Button,
     pub toolbar_host: gtk::Box,
     pub search_host: gtk::Box,
+    pub menu_bar: gtk::Box,
+    pub header: gtk::HeaderBar,
 }
 
 fn create_menu_button(label: &str) -> (gtk::MenuButton, gtk::Box) {
     let button = gtk::MenuButton::new();
     button.set_label(label);
     button.set_has_frame(false);
+    button.set_always_show_arrow(false);
 
     let menu_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
     menu_box.set_margin_start(6);
@@ -120,6 +123,10 @@ fn active_controller(
         .active_controller()
         .unwrap_or_else(|| fallback.clone())
 }
+
+const SIDEBAR_DEFAULT_WIDTH: i32 = 220;
+const SIDEBAR_MIN_WIDTH: i32 = 136;
+const SIDEBAR_HIDE_THRESHOLD: i32 = 84;
 
 pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     let (renderer, printer) = match crate::app::new_worker_pair() {
@@ -224,6 +231,8 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         print_button: print_button.clone(),
         toolbar_host: toolbar_host.clone(),
         search_host: search_host.clone(),
+        menu_bar: menu_bar.clone(),
+        header: header.clone(),
     });
     toolbar_host.append(&initial.toolbar);
     search_host.append(&initial.search_bar);
@@ -283,7 +292,48 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     content_paned.set_resize_end_child(true);
     content_paned.set_shrink_start_child(true);
     content_paned.set_shrink_end_child(false);
-    content_paned.set_position(220);
+    content_paned.set_position(SIDEBAR_DEFAULT_WIDTH);
+
+    let sidebar_for_resize = sidebar.clone();
+    let paned_for_resize = content_paned.clone();
+    let sidebar_adjusting = Rc::new(Cell::new(false));
+    let resize_adjusting = sidebar_adjusting.clone();
+    content_paned.connect_position_notify(move |paned| {
+        if resize_adjusting.get() || !sidebar_for_resize.is_visible() {
+            return;
+        }
+
+        let current = paned.position();
+        if current <= SIDEBAR_HIDE_THRESHOLD {
+            resize_adjusting.set(true);
+            sidebar_for_resize.set_visible(false);
+            paned_for_resize.set_position(0);
+            resize_adjusting.set(false);
+            return;
+        }
+
+        if current < SIDEBAR_MIN_WIDTH {
+            resize_adjusting.set(true);
+            paned_for_resize.set_position(SIDEBAR_MIN_WIDTH);
+            resize_adjusting.set(false);
+        }
+    });
+
+    let paned_for_visibility = content_paned.clone();
+    let visibility_adjusting = sidebar_adjusting.clone();
+    sidebar.connect_visible_notify(move |panel| {
+        if visibility_adjusting.get() || !panel.is_visible() {
+            return;
+        }
+        visibility_adjusting.set(true);
+        let restored = if paned_for_visibility.position() <= SIDEBAR_HIDE_THRESHOLD {
+            SIDEBAR_DEFAULT_WIDTH
+        } else {
+            paned_for_visibility.position().max(SIDEBAR_MIN_WIDTH)
+        };
+        paned_for_visibility.set_position(restored);
+        visibility_adjusting.set(false);
+    });
     shell.append(&header);
     shell.append(&menu_bar);
     shell.append(&toolbar_host);
@@ -323,6 +373,8 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
                     print_button: menu_open_controller.print_button.clone(),
                     toolbar_host: menu_open_controller.toolbar_host.clone(),
                     search_host: menu_open_controller.search_host.clone(),
+                    menu_bar: menu_open_controller.menu_bar.clone(),
+                    header: menu_open_controller.header.clone(),
                 },
                 menu_open_controller.clone(),
                 menu_last_directory.clone(),
@@ -493,10 +545,19 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
             );
         });
 
-    let menu_tabs_controller = initial.clone();
-    let tabs_hint_item = append_menu_item(&tabs_menu_box, "Gerenciar abas", move || {
-        dispatch_ui_command(&menu_tabs_controller, UiCommand::ShowTabsHint, None);
+    let previous_tab_manager = tab_manager.clone();
+    let previous_tab_item = append_menu_item(&tabs_menu_box, "Aba anterior", move || {
+        let _ = previous_tab_manager.borrow().select_previous_tab();
     });
+    let next_tab_manager = tab_manager.clone();
+    let next_tab_item = append_menu_item(&tabs_menu_box, "Próxima aba", move || {
+        let _ = next_tab_manager.borrow().select_next_tab();
+    });
+    let close_tab_manager = tab_manager.clone();
+    let close_tab_item = append_menu_item(&tabs_menu_box, "Fechar aba atual", move || {
+        let _ = close_tab_manager.borrow().close_current_tab();
+    });
+
     let restore_tab_controller = initial.clone();
     let restore_tab_manager = tab_manager.clone();
     let restore_tab_app = app.clone();
@@ -515,6 +576,8 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
                     print_button: restore_tab_button.clone(),
                     toolbar_host: restore_tab_controller.toolbar_host.clone(),
                     search_host: restore_tab_controller.search_host.clone(),
+                    menu_bar: restore_tab_controller.menu_bar.clone(),
+                    header: restore_tab_controller.header.clone(),
                 },
                 path,
             ) {
@@ -601,7 +664,9 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         view_sidebar_item,
         view_auxiliary_sidebar_item,
         view_fullscreen_item,
-        tabs_hint_item,
+        previous_tab_item.clone(),
+        next_tab_item.clone(),
+        close_tab_item.clone(),
         help_settings_item,
         help_about_item,
     ];
@@ -773,6 +838,8 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
                     print_button: open_controller.print_button.clone(),
                     toolbar_host: open_controller.toolbar_host.clone(),
                     search_host: open_controller.search_host.clone(),
+                    menu_bar: open_controller.menu_bar.clone(),
+                    header: open_controller.header.clone(),
                 },
                 open_controller.clone(),
                 last_directory.clone(),
@@ -816,6 +883,8 @@ pub(crate) fn create_document_controller(
         print_button,
         toolbar_host,
         search_host,
+        menu_bar,
+        header,
     } = params;
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
@@ -961,6 +1030,8 @@ pub(crate) fn create_document_controller(
         title,
         toolbar: toolbar.clone(),
         toolbar_host: toolbar_host.clone(),
+        menu_bar,
+        header,
         window: window.clone(),
         root: root.clone(),
         state_change_hooks: Rc::new(RefCell::new(Vec::new())),
@@ -1328,6 +1399,17 @@ pub(crate) fn create_document_controller(
         let Some(keyboard_controller) = keyboard_controller.upgrade() else {
             return gtk::glib::Propagation::Proceed;
         };
+        if keyval == gtk::gdk::Key::Escape && keyboard_controller.window.is_fullscreen() {
+            let in_presentation_mode = !keyboard_controller.toolbar_host.is_visible()
+                && !keyboard_controller.menu_bar.is_visible()
+                && !keyboard_controller.status.is_visible();
+            if in_presentation_mode {
+                keyboard_controller.toggle_presentation_mode();
+            } else {
+                crate::navigation::toggle_fullscreen(&keyboard_controller);
+            }
+            return gtk::glib::Propagation::Stop;
+        }
         let key_name = keyval.name().unwrap_or_default();
         let settings = crate::session::load_app_settings();
         let action =
@@ -1342,6 +1424,8 @@ pub(crate) fn create_document_controller(
                     print_button: keyboard_controller.print_button.clone(),
                     toolbar_host: keyboard_controller.toolbar_host.clone(),
                     search_host: keyboard_controller.search_host.clone(),
+                    menu_bar: keyboard_controller.menu_bar.clone(),
+                    header: keyboard_controller.header.clone(),
                 },
                 keyboard_controller.clone(),
                 last_directory.clone(),

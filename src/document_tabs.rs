@@ -310,6 +310,60 @@ impl DocumentTabManager {
         }
     }
 
+    pub fn select_previous_tab(&self) -> bool {
+        let Some(notebook) = self.notebook.as_ref() else {
+            return false;
+        };
+        let count = notebook.n_pages();
+        let Some(current) = notebook.current_page() else {
+            return false;
+        };
+        if count <= 1 {
+            return false;
+        }
+        let previous = (current + count - 1) % count;
+        notebook.set_current_page(Some(previous));
+        true
+    }
+
+    pub fn select_next_tab(&self) -> bool {
+        let Some(notebook) = self.notebook.as_ref() else {
+            return false;
+        };
+        let count = notebook.n_pages();
+        let Some(current) = notebook.current_page() else {
+            return false;
+        };
+        if count <= 1 {
+            return false;
+        }
+        notebook.set_current_page(Some((current + 1) % count));
+        true
+    }
+
+    pub fn close_current_tab(&self) -> bool {
+        let Some(notebook) = self.notebook.as_ref() else {
+            return false;
+        };
+        let Some(index) = notebook.current_page() else {
+            return false;
+        };
+        let Some(page) = notebook
+            .nth_page(Some(index))
+            .and_then(|page| page.downcast::<gtk4::Box>().ok())
+        else {
+            return false;
+        };
+        remove_page(
+            notebook,
+            page.upcast_ref(),
+            &self.tabs,
+            &self.controllers,
+            &self.active_controller_hooks,
+            &self.recently_closed,
+        )
+    }
+
     pub fn active_controller(&self) -> Option<Rc<ViewerController>> {
         let notebook = self.notebook.as_ref()?;
         let page = notebook.nth_page(Some(notebook.current_page()?))?;

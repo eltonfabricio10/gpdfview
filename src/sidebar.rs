@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use crate::app::ViewerController;
 use crate::cache::LruCache;
@@ -19,7 +19,6 @@ use crate::session::{
 };
 use crate::viewer_state::RenderKey;
 
-const THUMBNAIL_MAX_EDGE: i32 = 132;
 const THUMBNAIL_CACHE_BYTES: usize = 24 * 1024 * 1024;
 const THUMBNAIL_FRAME_WIDTH: i32 = 112;
 const THUMBNAIL_FRAME_HEIGHT: i32 = 156;
@@ -77,6 +76,49 @@ struct ThumbnailPixels {
     height: i32,
     stride: i32,
     pixels: Vec<u8>,
+}
+
+#[derive(Clone, Copy)]
+struct ThumbnailSizing {
+    frame_width: i32,
+    frame_height: i32,
+    max_edge: i32,
+    button_width: i32,
+}
+
+fn thumbnail_sizing_for_sidebar(available_width: i32) -> ThumbnailSizing {
+    let base_width = available_width.max(120);
+    let button_width = (base_width - 8).clamp(110, 320);
+    let frame_width = (button_width - 28).clamp(72, 240);
+    let aspect_ratio = f64::from(THUMBNAIL_FRAME_HEIGHT) / f64::from(THUMBNAIL_FRAME_WIDTH);
+    let frame_height = ((f64::from(frame_width) * aspect_ratio).round() as i32).max(96);
+    let max_edge = frame_width.max(frame_height).clamp(96, 320);
+    ThumbnailSizing {
+        frame_width,
+        frame_height,
+        max_edge,
+        button_width,
+    }
+}
+
+fn sidebar_available_width(pages_flow: &gtk4::FlowBox) -> i32 {
+    let width = pages_flow.width();
+    if width > 0 {
+        return width;
+    }
+
+    let mut ancestor = pages_flow.clone().upcast::<gtk4::Widget>();
+    while let Some(parent) = ancestor.parent() {
+        if let Ok(scrolled) = parent.clone().downcast::<gtk4::ScrolledWindow>() {
+            let width = scrolled.width().saturating_sub(18);
+            if width > 0 {
+                return width;
+            }
+        }
+        ancestor = parent;
+    }
+
+    THUMBNAIL_FRAME_WIDTH + 28
 }
 
 #[derive(Clone)]
@@ -145,12 +187,11 @@ fn thumbnail_surface_for_page(
 
 fn build_page_thumbnail_button(
     controller: &ViewerController,
-    thumbnail_cache: &Rc<RefCell<LruCache<RenderKey, gtk4::cairo::ImageSurface>>>,
-    thumbnail_generation: Arc<AtomicU64>,
-    active_thumbnail_workers: Arc<AtomicUsize>,
+    thumbnail: &ThumbnailContext,
     generation_id: u64,
     page_index: i32,
     is_current: bool,
+    sizing: ThumbnailSizing,
 ) -> gtk4::Button {
     let page_button = gtk4::Button::new();
     page_button.set_tooltip_text(Some(&format!("Ir para a página {}", page_index + 1)));
@@ -165,24 +206,24 @@ fn build_page_thumbnail_button(
         let state = controller.state.borrow();
         (state.path.clone(), state.rotation)
     };
-    let scale = f64::from(THUMBNAIL_MAX_EDGE) / 1000.0;
+    let scale = f64::from(sizing.max_edge) / 1000.0;
     let key = path
         .as_ref()
         .map(|path| RenderKey::new(path.clone(), page_index, scale, rotation));
     let thumbnail_state =
         Rc::new(RefCell::new(key.as_ref().and_then(|key| {
-            thumbnail_surface_for_page(thumbnail_cache, key)
+            thumbnail_surface_for_page(&thumbnail.cache, key)
         })));
     let page_label = gtk4::Label::new(Some(&format!("{}", page_index + 1)));
     page_label.add_css_class("dim-label");
     let preview = gtk4::DrawingArea::new();
-    preview.set_content_width(THUMBNAIL_FRAME_WIDTH);
-    preview.set_content_height(THUMBNAIL_FRAME_HEIGHT);
-    preview.set_size_request(THUMBNAIL_FRAME_WIDTH, THUMBNAIL_FRAME_HEIGHT);
-    let thumbnail = thumbnail_state.clone();
+    preview.set_content_width(sizing.frame_width);
+    preview.set_content_height(sizing.frame_height);
+    preview.set_size_request(sizing.frame_width, sizing.frame_height);
+    let frame_width = f64::from(sizing.frame_width);
+    let frame_height = f64::from(sizing.frame_height);
+    let thumbnail_surface = thumbnail_state.clone();
     preview.set_draw_func(move |_, context, _, _| {
-        let frame_width = f64::from(THUMBNAIL_FRAME_WIDTH);
-        let frame_height = f64::from(THUMBNAIL_FRAME_HEIGHT);
         context.set_source_rgb(0.18, 0.19, 0.20);
         context.rectangle(0.0, 0.0, frame_width, frame_height);
         let _ = context.fill();
@@ -197,7 +238,7 @@ fn build_page_thumbnail_button(
         context.set_line_width(1.0);
         let _ = context.stroke();
 
-        let Some(thumbnail) = thumbnail.borrow().clone() else {
+        let Some(thumbnail) = thumbnail_surface.borrow().clone() else {
             return;
         };
         let surface_width = f64::from(thumbnail.width());
@@ -223,9 +264,9 @@ fn build_page_thumbnail_button(
         if let (Some(path), Some(key)) = (path, key) {
             let preview_weak = preview.downgrade();
             let state_for_result = thumbnail_state.clone();
-            let cache_for_result = thumbnail_cache.clone();
-            let generation_for_worker = thumbnail_generation.clone();
-            let workers_for_worker = active_thumbnail_workers.clone();
+            let cache_for_result = thumbnail.cache.clone();
+            let generation_for_worker = thumbnail.generation.clone();
+            let workers_for_worker = thumbnail.workers.clone();
             let label_for_result = page_label.clone();
             let (sender, receiver) = mpsc::channel();
             if thread::Builder::new()
@@ -242,7 +283,7 @@ fn build_page_thumbnail_button(
                         &path,
                         page_index,
                         rotation,
-                        THUMBNAIL_MAX_EDGE,
+                        sizing.max_edge,
                         || generation_for_worker.load(Ordering::Relaxed) != generation_id,
                     )
                     .and_then(|mut surface| {
@@ -364,6 +405,7 @@ fn populate_pages_flow(
     thumbnail.next_button.set_sensitive(has_next_window);
     let visible_pages =
         (start..(start + THUMBNAIL_WINDOW_SIZE).min(page_count)).collect::<Vec<_>>();
+    let sizing = thumbnail_sizing_for_sidebar(sidebar_available_width(pages_flow));
     if visible_pages.is_empty() {
         let message = if path.is_some() {
             "Este PDF não contém páginas disponíveis."
@@ -373,7 +415,8 @@ fn populate_pages_flow(
         let placeholder = gtk4::Label::new(Some(message));
         placeholder.set_xalign(0.0);
         placeholder.set_wrap(true);
-        placeholder.set_max_width_chars(28);
+        let placeholder_width = (sizing.button_width / 8).clamp(14, 38);
+        placeholder.set_max_width_chars(placeholder_width);
         placeholder.add_css_class("dim-label");
         placeholder.set_margin_start(8);
         placeholder.set_margin_end(8);
@@ -395,14 +438,13 @@ fn populate_pages_flow(
     for page_index in visible_pages {
         let page_button = build_page_thumbnail_button(
             controller,
-            &thumbnail.cache,
-            thumbnail.generation.clone(),
-            thumbnail.workers.clone(),
+            thumbnail,
             generation_id,
             page_index,
             page_index == current_page,
+            sizing,
         );
-        page_button.set_size_request(THUMBNAIL_FRAME_WIDTH + 28, -1);
+        page_button.set_size_request(sizing.button_width, -1);
         pages_flow.insert(&page_button, -1);
     }
 }
@@ -838,6 +880,8 @@ pub fn build_sidebar(context: &SidebarBuildContext) -> (gtk4::Box, gtk4::Box) {
             print_button: print_button.clone(),
             toolbar_host,
             search_host,
+            menu_bar: controller.menu_bar.clone(),
+            header: controller.header.clone(),
         },
         status: controller.status.clone(),
     };
@@ -963,6 +1007,51 @@ pub fn build_sidebar(context: &SidebarBuildContext) -> (gtk4::Box, gtk4::Box) {
     let thumbnails_section = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
     thumbnails_section.append(&pages_flow);
     sidebar.append(&thumbnails_section);
+
+    // Loop leve e adaptativo: rápido durante arraste, econômico quando estável.
+    let resize_pages = pages_flow.clone();
+    let resize_thumbnail = thumbnail_context.clone();
+    let resize_manager = Rc::downgrade(&tab_manager);
+    let last_sidebar_width = Rc::new(Cell::new(0));
+    let observed_width = last_sidebar_width.clone();
+    let last_update_at = Rc::new(RefCell::new(Instant::now()));
+    let observed_update_at = last_update_at.clone();
+    gtk4::glib::timeout_add_local(Duration::from_millis(16), move || {
+        let Some(manager) = resize_manager.upgrade() else {
+            return gtk4::glib::ControlFlow::Break;
+        };
+        let Some(controller) = manager.borrow().active_controller() else {
+            return gtk4::glib::ControlFlow::Continue;
+        };
+        if !resize_pages.is_visible() {
+            return gtk4::glib::ControlFlow::Continue;
+        }
+
+        let current_width = sidebar_available_width(&resize_pages);
+        let previous_width = observed_width.get();
+        let delta = (current_width - previous_width).abs();
+        let elapsed = observed_update_at.borrow().elapsed();
+        let min_interval_ms = if delta >= 48 {
+            16
+        } else if delta >= 24 {
+            24
+        } else if delta >= 12 {
+            33
+        } else if delta >= 4 {
+            50
+        } else {
+            90
+        };
+
+        if previous_width == 0 || (delta >= 4 && elapsed >= Duration::from_millis(min_interval_ms))
+        {
+            observed_width.set(current_width);
+            *observed_update_at.borrow_mut() = Instant::now();
+            populate_pages_flow(&resize_pages, &controller, &resize_thumbnail);
+        }
+
+        gtk4::glib::ControlFlow::Continue
+    });
 
     let outline_header = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
     outline_header.set_halign(gtk4::Align::Fill);

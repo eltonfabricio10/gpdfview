@@ -41,6 +41,8 @@ pub(crate) struct OpenDocumentContext {
     pub print_button: gtk4::Button,
     pub toolbar_host: gtk4::Box,
     pub search_host: gtk4::Box,
+    pub menu_bar: gtk4::Box,
+    pub header: gtk4::HeaderBar,
 }
 
 pub(crate) fn open_document_in_new_tab(
@@ -64,6 +66,8 @@ pub(crate) fn open_document_in_new_tab(
         print_button: context.print_button.clone(),
         toolbar_host: context.toolbar_host.clone(),
         search_host: context.search_host.clone(),
+        menu_bar: context.menu_bar.clone(),
+        header: context.header.clone(),
     });
     context.tab_manager.borrow().add_tab_with_path(
         &new_controller.root,

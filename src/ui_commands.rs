@@ -18,7 +18,6 @@ pub(crate) enum UiCommand {
     CloseSplitView,
     ToggleSplitSync,
     ShowDocumentProperties,
-    ShowTabsHint,
 }
 
 pub(crate) fn dispatch_ui_command(
@@ -67,11 +66,7 @@ pub(crate) fn dispatch_ui_command(
             controller.show_settings_dialog();
         }
         UiCommand::ToggleFullscreen => {
-            if controller.window.is_fullscreen() {
-                controller.window.unfullscreen();
-            } else {
-                controller.window.fullscreen();
-            }
+            crate::navigation::toggle_fullscreen(controller);
         }
         UiCommand::TogglePresentation => {
             controller.toggle_presentation_mode();
@@ -149,11 +144,6 @@ pub(crate) fn dispatch_ui_command(
         }
         UiCommand::ShowDocumentProperties => {
             controller.show_document_properties();
-        }
-        UiCommand::ShowTabsHint => {
-            controller
-                .status
-                .set_text("Use o botão Abrir para criar uma nova aba com outro documento.");
         }
     }
 }
