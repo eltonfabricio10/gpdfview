@@ -10,9 +10,7 @@ use crate::layout::{
 use crate::viewer_state::{apply_render_request, sanitize_scale};
 
 fn zoom_step_from_settings() -> f64 {
-    crate::session::load_app_settings()
-        .zoom_step
-        .clamp(0.05, 1.0)
+    crate::session::normalize_zoom_step(crate::session::load_app_settings().zoom_step)
 }
 
 pub(crate) fn scroll_zoom_step(delta_y: f64, state: ModifierType) -> f64 {

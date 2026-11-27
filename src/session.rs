@@ -47,6 +47,14 @@ pub struct AppSettings {
     pub shortcuts: HashMap<String, String>,
 }
 
+pub fn normalize_zoom_step(value: f64) -> f64 {
+    if value.is_finite() {
+        value.clamp(0.05, 1.0)
+    } else {
+        0.1
+    }
+}
+
 impl Default for AppSettings {
     fn default() -> Self {
         Self {
@@ -83,7 +91,7 @@ pub fn save_app_settings_for_home(home: &Path, settings: &AppSettings) {
     let mut lines = vec![
         format!("default_layout={}", settings.default_layout),
         format!("split_sync={}", settings.split_sync),
-        format!("zoom_step={}", settings.zoom_step),
+        format!("zoom_step={}", normalize_zoom_step(settings.zoom_step)),
     ];
     let mut shortcuts = settings.shortcuts.clone();
     for (action, value) in shortcuts.iter_mut() {
@@ -123,7 +131,7 @@ pub fn load_app_settings_for_home(home: &Path) -> AppSettings {
             "split_sync" => settings.split_sync = value.eq_ignore_ascii_case("true"),
             "zoom_step" => {
                 if let Ok(parsed) = value.parse::<f64>() {
-                    settings.zoom_step = parsed;
+                    settings.zoom_step = normalize_zoom_step(parsed);
                 }
             }
             _ if key.starts_with("shortcut:") => {

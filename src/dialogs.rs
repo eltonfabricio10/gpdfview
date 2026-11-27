@@ -174,6 +174,11 @@ pub(crate) fn build_settings_dialog(
     zoom_row.append(&zoom_label);
     zoom_row.append(&zoom_entry);
     view_options.append(&zoom_row);
+    let zoom_error = gtk::Label::new(None);
+    zoom_error.set_xalign(0.0);
+    zoom_error.add_css_class("error");
+    zoom_error.set_visible(false);
+    view_options.append(&zoom_error);
     view_section.set_child(Some(&view_options));
     settings_sections.append(&view_section);
 
@@ -244,6 +249,7 @@ pub(crate) fn build_settings_dialog(
     let zoom_entry_for_save = zoom_entry.clone();
     let sync_switch_for_save = sync_switch.clone();
     let shortcut_error_for_save = shortcut_error.clone();
+    let zoom_error_for_save = zoom_error.clone();
     save_button.connect_clicked(move |_| {
         let mut normalized_shortcuts = std::collections::HashSet::new();
         let mut shortcut_values = Vec::with_capacity(shortcut_actions.len());
@@ -267,6 +273,20 @@ pub(crate) fn build_settings_dialog(
         }
         shortcut_error_for_save.set_visible(false);
 
+        let Ok(zoom_step) = zoom_entry_for_save.text().to_string().parse::<f64>() else {
+            zoom_error_for_save.set_text("Informe um número entre 0,05 e 1,00.");
+            zoom_error_for_save.set_visible(true);
+            zoom_entry_for_save.grab_focus();
+            return;
+        };
+        if !zoom_step.is_finite() {
+            zoom_error_for_save.set_text("O incremento do zoom precisa ser um número finito.");
+            zoom_error_for_save.set_visible(true);
+            zoom_entry_for_save.grab_focus();
+            return;
+        }
+        zoom_error_for_save.set_visible(false);
+
         let mut next_settings = settings_for_save.clone();
         let selected_layout_index = layout_combo_for_save.selected() as usize;
         next_settings.default_layout = layout_ids_for_save
@@ -275,9 +295,7 @@ pub(crate) fn build_settings_dialog(
             .unwrap_or("single")
             .to_string();
         next_settings.split_sync = sync_switch_for_save.is_active();
-        if let Ok(parsed) = zoom_entry_for_save.text().to_string().parse::<f64>() {
-            next_settings.zoom_step = parsed.clamp(0.05, 1.0);
-        }
+        next_settings.zoom_step = crate::session::normalize_zoom_step(zoom_step);
         for ((action, _), value) in shortcut_actions.iter().zip(shortcut_values) {
             next_settings.shortcuts.insert((*action).to_string(), value);
         }
