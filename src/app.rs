@@ -96,6 +96,7 @@ pub(crate) struct ViewerController {
     pub(crate) print_button: gtk::Button,
     pub(crate) title: gtk::Label,
     pub(crate) toolbar: gtk::Box,
+    pub(crate) toolbar_host: gtk::Box,
     pub(crate) window: adw::ApplicationWindow,
     pub(crate) root: gtk::Box,
     pub(crate) state_change_hooks: Rc<RefCell<Vec<StateChangeHook>>>,
@@ -879,6 +880,7 @@ pub fn run() {
                 path,
                 controller.title.clone(),
                 controller.print_button.clone(),
+                controller.toolbar_host.clone(),
             );
         }
     });

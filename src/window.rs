@@ -39,6 +39,7 @@ pub(crate) struct DocumentControllerParams<'a> {
     pub initial_path: Option<PathBuf>,
     pub title: gtk::Label,
     pub print_button: gtk::Button,
+    pub toolbar_host: gtk::Box,
 }
 
 fn create_menu_button(label: &str) -> (gtk::MenuButton, gtk::Box) {
@@ -159,6 +160,8 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     print_button.set_sensitive(false);
     header.pack_end(&print_button);
 
+    let toolbar_host = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+
     let last_directory = last_directory_for_home_path();
 
     let notebook = gtk::Notebook::new();
@@ -180,7 +183,9 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         initial_path: None,
         title: title.clone(),
         print_button: print_button.clone(),
+        toolbar_host: toolbar_host.clone(),
     });
+    toolbar_host.append(&initial.toolbar);
     {
         let print_manager = tab_manager.clone();
         let fallback = initial.clone();
@@ -213,6 +218,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         title.clone(),
         print_button.clone(),
         initial.clone(),
+        toolbar_host.clone(),
     );
     sidebar.set_visible(false);
 
@@ -221,6 +227,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     content.append(&notebook);
     shell.append(&header);
     shell.append(&menu_bar);
+    shell.append(&toolbar_host);
     shell.append(&content);
     let open_controller = initial.clone();
     let open_window = window.clone();
@@ -248,6 +255,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
             menu_open_tab_manager.clone(),
             menu_open_controller.clone(),
             menu_last_directory.clone(),
+            menu_open_controller.toolbar_host.clone(),
         );
     });
     let menu_print_manager = tab_manager.clone();
@@ -379,6 +387,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
                 path,
                 restore_tab_title.clone(),
                 restore_tab_button.clone(),
+                restore_tab_controller.toolbar_host.clone(),
             )
             .is_some()
             {
@@ -459,9 +468,14 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         bookmarks_toggle_item,
         page_bookmark_toggle_item,
     ]);
+    let active_toolbar_host = toolbar_host.clone();
     tab_manager
         .borrow()
         .subscribe_active_controller(move |controller| {
+            if let Some(current_toolbar) = active_toolbar_host.first_child() {
+                active_toolbar_host.remove(&current_toolbar);
+            }
+            active_toolbar_host.append(&controller.toolbar);
             let has_document = controller.state.borrow().path.is_some();
             for item in doc_sensitive_items.iter() {
                 item.set_sensitive(has_document);
@@ -508,6 +522,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
                 open_tab_manager.clone(),
                 open_controller.clone(),
                 last_directory.clone(),
+                open_controller.toolbar_host.clone(),
             );
         }
     });
@@ -546,6 +561,7 @@ pub(crate) fn create_document_controller(
         initial_path,
         title,
         print_button,
+        toolbar_host,
     } = params;
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -593,8 +609,6 @@ pub(crate) fn create_document_controller(
     toolbar.append(&layout_toggle);
     toolbar.append(&rotate_left);
     toolbar.append(&rotate_right);
-    root.append(&toolbar);
-
     let drawing_area = gtk::DrawingArea::new();
     drawing_area.set_content_width(640);
     drawing_area.set_content_height(820);
@@ -642,6 +656,7 @@ pub(crate) fn create_document_controller(
         print_button,
         title,
         toolbar: toolbar.clone(),
+        toolbar_host: toolbar_host.clone(),
         window: window.clone(),
         root: root.clone(),
         state_change_hooks: Rc::new(RefCell::new(Vec::new())),
@@ -1004,6 +1019,7 @@ pub(crate) fn create_document_controller(
                 open_tab_manager.clone(),
                 keyboard_controller.clone(),
                 last_directory.clone(),
+                keyboard_controller.toolbar_host.clone(),
             );
             return gtk::glib::Propagation::Stop;
         }
