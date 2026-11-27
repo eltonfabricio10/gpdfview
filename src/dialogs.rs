@@ -283,6 +283,7 @@ pub(crate) fn build_settings_dialog(
         }
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
         save_app_settings_for_home(std::path::Path::new(&home), &next_settings);
+        controller_for_save.notify_shortcut_settings_changed(&next_settings.shortcuts);
         controller_for_save.show_status("Configurações salvas.");
         dialog_for_save.close();
     });

@@ -24,6 +24,7 @@ use gtk4 as gtk;
 use gtk4::cairo::ImageSurface;
 use libadwaita as adw;
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::AtomicU64;
@@ -44,6 +45,7 @@ use crate::viewer_state::{apply_render_request, normalize_rotation};
 pub(crate) const CACHE_LIMIT_BYTES: usize = 128 * 1024 * 1024;
 
 type StateChangeHook = Box<dyn Fn() + 'static>;
+type ShortcutSettingsHook = Box<dyn Fn(&HashMap<String, String>) + 'static>;
 
 pub(crate) struct SearchResponse {
     pub(crate) generation: u64,
@@ -109,6 +111,7 @@ pub(crate) struct ViewerController {
     pub(crate) window: adw::ApplicationWindow,
     pub(crate) root: gtk::Box,
     pub(crate) state_change_hooks: Rc<RefCell<Vec<StateChangeHook>>>,
+    pub(crate) shortcut_settings_hooks: Rc<RefCell<Vec<ShortcutSettingsHook>>>,
     pub(crate) search_sender: mpsc::Sender<SearchResponse>,
     pub(crate) search_receiver: Rc<RefCell<mpsc::Receiver<SearchResponse>>>,
     pub(crate) search_generation: Arc<AtomicU64>,
@@ -208,6 +211,21 @@ impl ViewerController {
         F: Fn() + 'static,
     {
         self.state_change_hooks.borrow_mut().push(Box::new(hook));
+    }
+
+    pub(crate) fn subscribe_shortcut_settings_changes<F>(&self, hook: F)
+    where
+        F: Fn(&HashMap<String, String>) + 'static,
+    {
+        self.shortcut_settings_hooks
+            .borrow_mut()
+            .push(Box::new(hook));
+    }
+
+    pub(crate) fn notify_shortcut_settings_changed(&self, shortcuts: &HashMap<String, String>) {
+        for hook in self.shortcut_settings_hooks.borrow().iter() {
+            hook(shortcuts);
+        }
     }
 
     pub(crate) fn notify_state_changed(&self) {

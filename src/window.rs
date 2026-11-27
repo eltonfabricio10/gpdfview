@@ -1,4 +1,5 @@
 use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::time::Duration;
@@ -97,6 +98,15 @@ where
     item.connect_clicked(move |_| on_click());
     menu_box.append(&item);
     item
+}
+
+fn menu_shortcut_label(item: &gtk::Button) -> Option<gtk::Label> {
+    item.child()?
+        .downcast::<gtk::Box>()
+        .ok()?
+        .last_child()?
+        .downcast::<gtk::Label>()
+        .ok()
 }
 
 fn active_controller(
@@ -542,6 +552,21 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         );
     });
 
+    let mut shortcut_label_map = HashMap::new();
+    for (action, item) in [
+        ("open_file", &file_open_item),
+        ("focus_search", &edit_focus_item),
+        ("toggle_fullscreen", &view_fullscreen_item),
+        ("toggle_presentation", &view_presentation_item),
+    ] {
+        if let Some(label) = menu_shortcut_label(item) {
+            shortcut_label_map.insert(action.to_string(), label);
+        }
+    }
+    let shortcut_labels = Rc::new(RefCell::new(shortcut_label_map));
+    let observed_shortcut_controllers =
+        Rc::new(RefCell::new(std::collections::HashSet::<usize>::new()));
+
     // Keep references alive and update sensitivity based on document availability.
     let _always_enabled_items = [
         file_open_item,
@@ -578,6 +603,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     let weak_last_page = last_page_item.downgrade();
     let weak_restore_tab = restore_tab_item.downgrade();
     let weak_restore_manager = Rc::downgrade(&tab_manager);
+    let menu_shortcut_labels = shortcut_labels.clone();
     tab_manager
         .borrow()
         .subscribe_active_controller(move |controller| {
@@ -600,6 +626,21 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
                 item.set_sensitive(has_document);
             }
             let controller_id = Rc::as_ptr(&controller.state) as usize;
+            if observed_shortcut_controllers
+                .borrow_mut()
+                .insert(controller_id)
+            {
+                let weak_labels = Rc::downgrade(&menu_shortcut_labels);
+                controller.subscribe_shortcut_settings_changes(move |shortcuts| {
+                    if let Some(labels) = weak_labels.upgrade() {
+                        for (action, label) in labels.borrow().iter() {
+                            if let Some(shortcut) = shortcuts.get(action) {
+                                label.set_text(shortcut);
+                            }
+                        }
+                    }
+                });
+            }
             if observed_history_controllers
                 .borrow_mut()
                 .insert(controller_id)
@@ -882,6 +923,7 @@ pub(crate) fn create_document_controller(
         window: window.clone(),
         root: root.clone(),
         state_change_hooks: Rc::new(RefCell::new(Vec::new())),
+        shortcut_settings_hooks: Rc::new(RefCell::new(Vec::new())),
         search_sender,
         search_receiver: Rc::new(RefCell::new(search_receiver)),
         search_generation: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),

@@ -49,7 +49,7 @@
 | Persist page, zoom, rotation and layout per document | IMPLEMENTADO | `src/session.rs`, `src/app.rs` | Atomic writes, versioned storage and file identity/invalidation |
 | Restore every previously open tab/session | PARCIAL | `src/session.rs`, `src/app.rs` | Current startup restore is centered on the last document, not a full multi-tab session |
 | Settings for default layout, split sync and zoom step | IMPLEMENTADO | `src/session.rs`, `src/dialogs.rs` | Schema/versioning and malformed-value tests |
-| Configurable keyboard shortcuts | PARCIAL | `src/keyboard.rs`, `src/dialogs.rs`, `src/session.rs`, `src/window.rs` | All 12 mapped actions have editable fields; empty, invalid and duplicate combinations are rejected; menu hints load saved values at startup. Runtime behavior and visible hint refresh after saving still need GUI verification |
+| Configurable keyboard shortcuts | PARCIAL | `src/keyboard.rs`, `src/dialogs.rs`, `src/session.rs`, `src/window.rs`, `src/app.rs` | All 12 mapped actions have editable fields; empty, invalid and duplicate combinations are rejected; menu hints refresh when settings are saved. Runtime behavior still needs GUI verification |
 | Configurable toolbars | AUSENTE | No equivalent model/UI found | Add action model and persistence if desired |
 
 ## Printing and document formats
@@ -89,7 +89,7 @@
 | Menus | Portuguese labels, document-aware sensitivity, boundary-aware first/last page actions, restorable-tab availability and shortcut hints | Check menu geometry, accessibility names, and action feedback in a running GTK session |
 | Reading layout | Dark canvas, light page, document toolbar, left thumbnail panel, auxiliary panels, and bottom search bar | Compare screenshots at the reference's approximate 1360 × 725 size and 50% zoom |
 | Auxiliary panels | Outline, search results, recents, favorites, user bookmarks and properties | Validate narrow windows, long lists and switching documents visually |
-| Preferences | Separate document-view and keyboard-shortcut categories; Portuguese layout choices; validation for shortcut conflicts | Exercise save/cancel and confirm menu hint refresh after shortcut edits |
+| Preferences | Separate document-view and keyboard-shortcut categories; Portuguese layout choices; validation for shortcut conflicts; menu labels update after saving | Exercise save/cancel and verify updated labels and key actions in a running app |
 
 The visual review in [`UI_REFERENCE.md`](UI_REFERENCE.md) is source-based and maps reference states to implementation files. It is not a pixel comparison or a manual application run.
 
