@@ -201,5 +201,6 @@ This follow-up implements the smaller UI improvements identified from `/home/elt
 | 21 | Refresh visible menu shortcut labels after saving preferences | This follow-up |
 | 22 | Load properties off the GTK thread and ignore stale tab results | This follow-up |
 | 23 | Load modal properties without blocking the GTK thread | This follow-up |
+| 24 | Require exact modifiers and honor changed shortcut bindings | This follow-up |
 
 The runtime screenshot comparison remains open. This environment did not provide a controlled gpdfview window for capture during this pass, so `docs/UI_REFERENCE.md` records source-level findings and the exact visual checks still needed.
