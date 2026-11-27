@@ -1475,19 +1475,21 @@ pub(crate) fn create_document_controller(
         });
         drop(state);
         crate::rendering::update_canvas_size(&layout_controller);
-        if layout_mode == LayoutMode::Continuous && page_height_points > 0.0 {
-            let weak_controller = Rc::downgrade(&layout_controller);
-            gtk::glib::idle_add_local_once(move || {
-                let Some(controller) = weak_controller.upgrade() else {
-                    return;
-                };
-                let adjustment = controller.scrolled.vadjustment();
+        let weak_controller = Rc::downgrade(&layout_controller);
+        gtk::glib::idle_add_local_once(move || {
+            let Some(controller) = weak_controller.upgrade() else {
+                return;
+            };
+            let adjustment = controller.scrolled.vadjustment();
+            if layout_mode == LayoutMode::Continuous && page_height_points > 0.0 {
                 let target = continuous_page_top(current_page, page_height_points, scale);
                 let lower = adjustment.lower();
                 let max_value = (adjustment.upper() - adjustment.page_size()).max(lower);
                 adjustment.set_value(target.clamp(lower, max_value));
-            });
-        }
+            } else {
+                adjustment.set_value(adjustment.lower());
+            }
+        });
     });
     let rotate_left_controller = Rc::downgrade(&controller);
     rotate_left.connect_clicked(move |_| {
