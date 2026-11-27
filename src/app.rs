@@ -292,7 +292,7 @@ impl ViewerController {
                 state.layout_mode = crate::viewer_state::LayoutMode::from_str(&saved.layout_mode);
             }
         }
-        self.status.set_text("Loading first page…");
+        self.status.set_text("Carregando a primeira página…");
         self.notify_state_changed();
         let (page_index, scale, rotation) = {
             let state = self.state.borrow();
@@ -408,8 +408,10 @@ impl ViewerController {
 
     pub(crate) fn show_error(&self, error: RenderError) {
         if error.generation == self.state.borrow().generation {
-            self.status
-                .set_text(&format!("Could not render PDF: {}", error.message));
+            self.status.set_text(&format!(
+                "Não foi possível renderizar o PDF: {}",
+                error.message
+            ));
         }
     }
 
@@ -574,10 +576,10 @@ impl ViewerController {
         let dialog = gtk::Dialog::builder()
             .transient_for(&self.window)
             .modal(true)
-            .title("Print options")
+            .title("Opções de impressão")
             .build();
-        dialog.add_button("Cancel", gtk::ResponseType::Cancel);
-        dialog.add_button("Print", gtk::ResponseType::Accept);
+        dialog.add_button("Cancelar", gtk::ResponseType::Cancel);
+        dialog.add_button("Imprimir", gtk::ResponseType::Accept);
 
         let content = dialog.content_area();
         let grid = gtk::Grid::new();
@@ -588,47 +590,47 @@ impl ViewerController {
         grid.set_row_spacing(8);
         grid.set_column_spacing(10);
 
-        let range_label = gtk::Label::new(Some("Print range"));
+        let range_label = gtk::Label::new(Some("Intervalo de impressão"));
         range_label.set_halign(gtk::Align::Start);
         let range_mode = gtk::ComboBoxText::new();
-        range_mode.append(Some("all"), "All pages");
-        range_mode.append(Some("current"), "Current page");
-        range_mode.append(Some("range"), "Custom range");
+        range_mode.append(Some("all"), "Todas as páginas");
+        range_mode.append(Some("current"), "Página atual");
+        range_mode.append(Some("range"), "Intervalo personalizado");
         range_mode.set_active_id(Some("all"));
         grid.attach(&range_label, 0, 0, 1, 1);
         grid.attach(&range_mode, 1, 0, 1, 1);
 
-        let from_label = gtk::Label::new(Some("From page"));
+        let from_label = gtk::Label::new(Some("Da página"));
         from_label.set_halign(gtk::Align::Start);
         let from_spin = gtk::SpinButton::with_range(1.0, f64::from(page_count), 1.0);
         from_spin.set_value(1.0);
         grid.attach(&from_label, 0, 1, 1, 1);
         grid.attach(&from_spin, 1, 1, 1, 1);
 
-        let to_label = gtk::Label::new(Some("To page"));
+        let to_label = gtk::Label::new(Some("Até a página"));
         to_label.set_halign(gtk::Align::Start);
         let to_spin = gtk::SpinButton::with_range(1.0, f64::from(page_count), 1.0);
         to_spin.set_value(f64::from(page_count));
         grid.attach(&to_label, 0, 2, 1, 1);
         grid.attach(&to_spin, 1, 2, 1, 1);
 
-        let copies_label = gtk::Label::new(Some("Copies"));
+        let copies_label = gtk::Label::new(Some("Cópias"));
         copies_label.set_halign(gtk::Align::Start);
         let copies_spin = gtk::SpinButton::with_range(1.0, 99.0, 1.0);
         copies_spin.set_value(1.0);
         grid.attach(&copies_label, 0, 3, 1, 1);
         grid.attach(&copies_spin, 1, 3, 1, 1);
 
-        let orientation_label = gtk::Label::new(Some("Orientation"));
+        let orientation_label = gtk::Label::new(Some("Orientação"));
         orientation_label.set_halign(gtk::Align::Start);
         let orientation = gtk::ComboBoxText::new();
-        orientation.append(Some("portrait"), "Portrait");
-        orientation.append(Some("landscape"), "Landscape");
+        orientation.append(Some("portrait"), "Retrato");
+        orientation.append(Some("landscape"), "Paisagem");
         orientation.set_active_id(Some("portrait"));
         grid.attach(&orientation_label, 0, 4, 1, 1);
         grid.attach(&orientation, 1, 4, 1, 1);
 
-        let scale_label = gtk::Label::new(Some("Scale (%)"));
+        let scale_label = gtk::Label::new(Some("Escala (%)"));
         scale_label.set_halign(gtk::Align::Start);
         let scale_spin = gtk::SpinButton::with_range(10.0, 400.0, 5.0);
         scale_spin.set_value(100.0);
@@ -979,7 +981,7 @@ pub fn run() {
         let Some(tab_manager) = controller.tab_manager.upgrade() else {
             controller
                 .status
-                .set_text("The document tab manager is unavailable.");
+                .set_text("O gerenciador de abas não está disponível.");
             return;
         };
 
@@ -987,7 +989,7 @@ pub fn run() {
             let Some(path) = file.path() else {
                 controller
                     .status
-                    .set_text("Only local PDF files are supported.");
+                    .set_text("Somente arquivos PDF locais são aceitos.");
                 continue;
             };
             if !path
@@ -995,7 +997,9 @@ pub fn run() {
                 .and_then(|extension| extension.to_str())
                 .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
             {
-                controller.status.set_text("Only PDF files are supported.");
+                controller
+                    .status
+                    .set_text("Somente arquivos PDF são aceitos.");
                 continue;
             }
 

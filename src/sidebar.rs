@@ -149,7 +149,7 @@ fn build_page_thumbnail_button(
     is_current: bool,
 ) -> gtk4::Button {
     let page_button = gtk4::Button::new();
-    page_button.set_tooltip_text(Some(&format!("Go to page {}", page_index + 1)));
+    page_button.set_tooltip_text(Some(&format!("Ir para a página {}", page_index + 1)));
 
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
     content.set_margin_start(4);
@@ -321,7 +321,7 @@ fn populate_pages_flow(
     let state = controller.state.borrow();
     let visible_pages = page_range_for_sidebar(state.page_count, state.page_index);
     if visible_pages.is_empty() {
-        let placeholder = gtk4::Label::new(Some("Loading page thumbnails…"));
+        let placeholder = gtk4::Label::new(Some("Carregando miniaturas…"));
         placeholder.set_xalign(0.0);
         placeholder.set_margin_start(8);
         placeholder.set_margin_end(8);
@@ -357,11 +357,11 @@ fn populate_outline_list(
     }
 
     let Some(path) = controller.state.borrow().path.clone() else {
-        append_outline_message(list, "Open a document to load bookmarks.");
+        append_outline_message(list, "Abra um documento para carregar o sumário.");
         return;
     };
 
-    append_outline_message(list, "Loading document outline…");
+    append_outline_message(list, "Carregando a estrutura do documento…");
     let (sender, receiver) = mpsc::channel();
     let path_for_worker = path.clone();
     let generation_for_worker = generation.clone();
@@ -377,7 +377,10 @@ fn populate_outline_list(
         while let Some(child) = list.first_child() {
             list.remove(&child);
         }
-        append_outline_message(list, &format!("Could not start outline loading: {error}"));
+        append_outline_message(
+            list,
+            &format!("Não foi possível iniciar a leitura do sumário: {error}"),
+        );
         return;
     }
 
@@ -447,7 +450,8 @@ fn populate_outline_result(
                 page.set_xalign(1.0);
                 row_box.append(&page);
                 button.set_child(Some(&row_box));
-                button.set_tooltip_text(Some(&format!("Go to page {}", entry.page_index + 1)));
+                button
+                    .set_tooltip_text(Some(&format!("Ir para a página {}", entry.page_index + 1)));
                 let page_index = entry.page_index;
                 let outline_manager = manager.clone();
                 button.connect_clicked(move |_| {
@@ -466,7 +470,10 @@ fn populate_outline_result(
             }
         }
         Err(error) => {
-            append_outline_message(list, &format!("Could not load outline: {error}"));
+            append_outline_message(
+                list,
+                &format!("Não foi possível carregar o sumário: {error}"),
+            );
         }
     }
 }
@@ -772,7 +779,7 @@ pub fn build_sidebar(
     auxiliary_header.set_margin_end(8);
     auxiliary_header.set_margin_top(6);
     auxiliary_header.set_margin_bottom(6);
-    let auxiliary_title = gtk4::Label::new(Some("Contornar"));
+    let auxiliary_title = gtk4::Label::new(Some("Estrutura"));
     auxiliary_title.set_xalign(0.0);
     auxiliary_title.set_hexpand(true);
     auxiliary_header.append(&auxiliary_title);
@@ -793,7 +800,7 @@ pub fn build_sidebar(
     let auxiliary_title_for_stack = auxiliary_title.clone();
     auxiliary_stack.connect_visible_child_notify(move |stack| {
         let title = match stack.visible_child_name().as_deref() {
-            Some("outline") => "Contornar",
+            Some("outline") => "Estrutura",
             Some("search") => "Busca",
             Some("recent") => "Recentes",
             Some("favorites") => "Favoritos",
@@ -830,10 +837,10 @@ pub fn build_sidebar(
     let outline_header = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
     outline_header.set_halign(gtk4::Align::Fill);
     outline_header.set_hexpand(true);
-    let outline_label = gtk4::Label::new(Some("Marcadores"));
+    let outline_label = gtk4::Label::new(Some("Sumário do PDF"));
     outline_label.set_halign(gtk4::Align::Start);
     outline_label.set_hexpand(true);
-    outline_label.set_markup("<b>Marcadores</b>");
+    outline_label.set_markup("<b>Sumário do PDF</b>");
     outline_header.append(&outline_label);
     let refresh_outline = gtk4::Button::with_label("Atualizar");
     outline_header.append(&refresh_outline);
@@ -864,7 +871,7 @@ pub fn build_sidebar(
     let outline_section = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
     outline_section.append(&outline_header);
     outline_section.append(&outline_list);
-    auxiliary_stack.add_titled(&outline_section, Some("outline"), "Contornar");
+    auxiliary_stack.add_titled(&outline_section, Some("outline"), "Estrutura");
 
     let search_list = gtk4::ListBox::new();
     search_list.set_selection_mode(gtk4::SelectionMode::None);
@@ -885,7 +892,7 @@ pub fn build_sidebar(
         let label = path
             .file_name()
             .and_then(|name| name.to_str())
-            .unwrap_or("Document")
+            .unwrap_or("Documento")
             .to_string();
         append_sidebar_entry(&recent_list, path, &label, &open_context);
     }
@@ -904,7 +911,7 @@ pub fn build_sidebar(
         let label = path
             .file_name()
             .and_then(|name| name.to_str())
-            .unwrap_or("Document")
+            .unwrap_or("Documento")
             .to_string();
         append_sidebar_entry(&favorites_list, path, &label, &open_context);
     }
