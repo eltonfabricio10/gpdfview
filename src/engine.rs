@@ -12,6 +12,7 @@ use std::thread;
 
 const RENDER_SCALE_LIMIT: f64 = 4.0;
 const PAGE_MEMORY_LIMIT_BYTES: usize = 128 * 1024 * 1024;
+const MAX_PENDING_PREFETCHES: usize = 4;
 
 #[derive(Clone, Debug)]
 pub struct RenderRequest {
@@ -394,6 +395,9 @@ impl PdfRenderer {
         let Ok(mut state) = lock.lock() else {
             return generation;
         };
+        if state.stopped {
+            return generation;
+        }
         state.prefetches.clear();
         state.request = Some(request);
         wake.notify_one();
@@ -418,6 +422,9 @@ impl PdfRenderer {
         let Ok(mut state) = lock.lock() else {
             return;
         };
+        if state.stopped {
+            return;
+        }
         state
             .prefetches
             .retain(|request| request.generation == generation);
@@ -438,6 +445,9 @@ impl PdfRenderer {
                 generation,
                 prefetch: true,
             });
+            while state.prefetches.len() > MAX_PENDING_PREFETCHES {
+                state.prefetches.pop_front();
+            }
         }
         wake.notify_one();
     }
@@ -973,6 +983,44 @@ mod tests {
             }
         }
         panic!("oversized page request did not return a page");
+    }
+
+    #[test]
+    fn shutdown_rejects_new_render_work() {
+        let fixture = PdfFixture::two_page();
+        let renderer = PdfRenderer::new().expect("start worker");
+        renderer.shutdown();
+
+        let generation = renderer.request(fixture.0.clone(), 0, 1.0, 0);
+        let (_, wake) = &*renderer.pending;
+        wake.notify_all();
+        thread::sleep(Duration::from_millis(25));
+
+        assert!(renderer.try_recv().is_err());
+        let state = renderer.pending.0.lock().expect("renderer state");
+        assert!(state.stopped);
+        assert!(state.request.is_none());
+        assert!(state.prefetches.is_empty());
+        assert!(generation > 0);
+    }
+
+    #[test]
+    fn prefetch_queue_is_bounded() {
+        let renderer = PdfRenderer::new().expect("start worker");
+        let path = PathBuf::from("/tmp/bounded-prefetch.pdf");
+        let generation = renderer.next_generation.fetch_add(1, Ordering::Relaxed);
+        renderer.prefetch(path, &[0, 1, 2, 3, 4, 5, 6, 7], 1.0, generation, 0);
+
+        let (lock, wake) = &*renderer.pending;
+        let mut state = lock.lock().expect("renderer state");
+        state.request = None;
+        let queued = state.prefetches.len();
+        state.stopped = true;
+        state.prefetches.clear();
+        wake.notify_all();
+        drop(state);
+
+        assert!(queued <= super::MAX_PENDING_PREFETCHES);
     }
 
     #[test]
