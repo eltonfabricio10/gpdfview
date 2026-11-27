@@ -217,7 +217,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         }
     }
 
-    let sidebar = build_sidebar(
+    let (sidebar, auxiliary_sidebar) = build_sidebar(
         app,
         &window,
         tab_manager.clone(),
@@ -227,11 +227,13 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         toolbar_host.clone(),
         search_host.clone(),
     );
-    sidebar.set_visible(false);
+    sidebar.set_visible(true);
+    auxiliary_sidebar.set_visible(false);
 
     let content = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     content.append(&sidebar);
     content.append(&notebook);
+    content.append(&auxiliary_sidebar);
     shell.append(&header);
     shell.append(&menu_bar);
     shell.append(&toolbar_host);
@@ -346,6 +348,11 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
                 UiCommand::ToggleSidebar,
                 Some(&menu_sidebar),
             );
+        });
+    let auxiliary_sidebar = auxiliary_sidebar.clone();
+    let view_auxiliary_sidebar_item =
+        append_menu_item(&view_menu_box, "Alternar painel auxiliar", move || {
+            auxiliary_sidebar.set_visible(!auxiliary_sidebar.is_visible());
         });
     let view_fullscreen_manager = tab_manager.clone();
     let view_fullscreen_fallback = initial.clone();
@@ -490,6 +497,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         file_open_item,
         edit_focus_item,
         view_sidebar_item,
+        view_auxiliary_sidebar_item,
         view_fullscreen_item,
         tabs_hint_item,
         help_settings_item,

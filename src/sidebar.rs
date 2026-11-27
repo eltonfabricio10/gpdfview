@@ -346,13 +346,6 @@ fn populate_pages_flow(
     }
 }
 
-fn section_toggle(label: &str, active: bool) -> gtk4::ToggleButton {
-    let button = gtk4::ToggleButton::with_label(label);
-    button.set_active(active);
-    button.set_has_frame(false);
-    button
-}
-
 fn populate_outline_list(
     list: &gtk4::ListBox,
     controller: Rc<ViewerController>,
@@ -576,7 +569,7 @@ pub fn build_sidebar(
     controller: Rc<ViewerController>,
     toolbar_host: gtk4::Box,
     search_host: gtk4::Box,
-) -> gtk4::Box {
+) -> (gtk4::Box, gtk4::Box) {
     let open_context = SidebarOpenContext {
         app: app.clone(),
         window: window.clone(),
@@ -607,24 +600,6 @@ pub fn build_sidebar(
     sidebar_root.append(&panel_header);
     sidebar_root.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
 
-    let section_toggle_row = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
-    section_toggle_row.set_margin_start(8);
-    section_toggle_row.set_margin_end(8);
-    section_toggle_row.set_margin_top(6);
-    section_toggle_row.set_margin_bottom(6);
-    let mini_toggle = section_toggle("Mini", true);
-    let outline_toggle = section_toggle("Marc", true);
-    let search_toggle = section_toggle("Busca", true);
-    let recent_toggle = section_toggle("Rec", false);
-    let favorites_toggle = section_toggle("Fav", false);
-    section_toggle_row.append(&mini_toggle);
-    section_toggle_row.append(&outline_toggle);
-    section_toggle_row.append(&search_toggle);
-    section_toggle_row.append(&recent_toggle);
-    section_toggle_row.append(&favorites_toggle);
-    sidebar_root.append(&section_toggle_row);
-    sidebar_root.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
-
     let hide_sidebar = sidebar_root.clone();
     close_button.connect_clicked(move |_| {
         hide_sidebar.set_visible(false);
@@ -642,6 +617,47 @@ pub fn build_sidebar(
     sidebar.set_margin_bottom(6);
     sidebar_scrolled.set_child(Some(&sidebar));
     sidebar_root.append(&sidebar_scrolled);
+
+    let auxiliary_sidebar = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
+    auxiliary_sidebar.set_size_request(240, -1);
+    auxiliary_sidebar.add_css_class("sidebar");
+    let auxiliary_header = gtk4::Box::new(gtk4::Orientation::Horizontal, 4);
+    auxiliary_header.set_margin_start(8);
+    auxiliary_header.set_margin_end(8);
+    auxiliary_header.set_margin_top(6);
+    auxiliary_header.set_margin_bottom(6);
+    let auxiliary_title = gtk4::Label::new(Some("Contornar"));
+    auxiliary_title.set_xalign(0.0);
+    auxiliary_title.set_hexpand(true);
+    auxiliary_header.append(&auxiliary_title);
+    let auxiliary_close = gtk4::Button::from_icon_name("window-close-symbolic");
+    auxiliary_close.set_has_frame(false);
+    auxiliary_close.set_tooltip_text(Some("Ocultar painel auxiliar"));
+    auxiliary_header.append(&auxiliary_close);
+    auxiliary_sidebar.append(&auxiliary_header);
+    auxiliary_sidebar.append(&gtk4::Separator::new(gtk4::Orientation::Horizontal));
+    let hide_auxiliary_sidebar = auxiliary_sidebar.clone();
+    auxiliary_close.connect_clicked(move |_| hide_auxiliary_sidebar.set_visible(false));
+    let auxiliary_scrolled = gtk4::ScrolledWindow::new();
+    auxiliary_scrolled.set_policy(gtk4::PolicyType::Never, gtk4::PolicyType::Automatic);
+    auxiliary_scrolled.set_vexpand(true);
+    let auxiliary_stack = gtk4::Stack::new();
+    auxiliary_stack.set_hexpand(true);
+    auxiliary_stack.set_vexpand(true);
+    let auxiliary_title_for_stack = auxiliary_title.clone();
+    auxiliary_stack.connect_visible_child_notify(move |stack| {
+        let title = match stack.visible_child_name().as_deref() {
+            Some("outline") => "Contornar",
+            Some("search") => "Busca",
+            Some("recent") => "Recentes",
+            Some("favorites") => "Favoritos",
+            Some("bookmarks") => "Marcadores",
+            _ => "Painel",
+        };
+        auxiliary_title_for_stack.set_text(title);
+    });
+    auxiliary_scrolled.set_child(Some(&auxiliary_stack));
+    auxiliary_sidebar.append(&auxiliary_scrolled);
 
     let pages_flow = gtk4::FlowBox::new();
     pages_flow.set_min_children_per_line(1);
@@ -701,10 +717,7 @@ pub fn build_sidebar(
     let outline_section = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
     outline_section.append(&outline_header);
     outline_section.append(&outline_list);
-    let outline_expander = gtk4::Expander::new(Some("Marcadores"));
-    outline_expander.set_expanded(false);
-    outline_expander.set_child(Some(&outline_section));
-    sidebar.append(&outline_expander);
+    auxiliary_stack.add_titled(&outline_section, Some("outline"), "Contornar");
 
     let search_list = gtk4::ListBox::new();
     search_list.set_selection_mode(gtk4::SelectionMode::None);
@@ -716,10 +729,7 @@ pub fn build_sidebar(
     search_title.set_xalign(0.0);
     search_section.append(&search_title);
     search_section.append(&search_list);
-    let search_expander = gtk4::Expander::new(Some("Busca"));
-    search_expander.set_expanded(true);
-    search_expander.set_child(Some(&search_section));
-    sidebar.append(&search_expander);
+    auxiliary_stack.add_titled(&search_section, Some("search"), "Busca");
 
     let recent_list = gtk4::ListBox::new();
     recent_list.set_selection_mode(gtk4::SelectionMode::Single);
@@ -738,11 +748,7 @@ pub fn build_sidebar(
     recent_title.set_xalign(0.0);
     recent_section.append(&recent_title);
     recent_section.append(&recent_list);
-    let recent_expander = gtk4::Expander::new(Some("Recentes"));
-    recent_expander.set_expanded(false);
-    recent_expander.set_child(Some(&recent_section));
-    recent_expander.set_visible(false);
-    sidebar.append(&recent_expander);
+    auxiliary_stack.add_titled(&recent_section, Some("recent"), "Recentes");
 
     let favorites_list = gtk4::ListBox::new();
     favorites_list.set_selection_mode(gtk4::SelectionMode::Single);
@@ -761,11 +767,7 @@ pub fn build_sidebar(
     favorites_title.set_xalign(0.0);
     favorites_section.append(&favorites_title);
     favorites_section.append(&favorites_list);
-    let favorites_expander = gtk4::Expander::new(Some("Favoritos"));
-    favorites_expander.set_expanded(false);
-    favorites_expander.set_child(Some(&favorites_section));
-    favorites_expander.set_visible(false);
-    sidebar.append(&favorites_expander);
+    auxiliary_stack.add_titled(&favorites_section, Some("favorites"), "Favoritos");
 
     let app_bookmarks_list = gtk4::ListBox::new();
     app_bookmarks_list.set_selection_mode(gtk4::SelectionMode::Single);
@@ -777,41 +779,11 @@ pub fn build_sidebar(
     app_bookmarks_title.set_xalign(0.0);
     app_bookmarks_section.append(&app_bookmarks_title);
     app_bookmarks_section.append(&app_bookmarks_list);
-    let app_bookmarks_expander = gtk4::Expander::new(Some("Marcadores do app"));
-    app_bookmarks_expander.set_expanded(false);
-    app_bookmarks_expander.set_child(Some(&app_bookmarks_section));
-    sidebar.append(&app_bookmarks_expander);
-
-    {
-        let thumbnails_section = thumbnails_section.clone();
-        mini_toggle.connect_toggled(move |button| {
-            thumbnails_section.set_visible(button.is_active());
-        });
-    }
-    {
-        let outline_expander = outline_expander.clone();
-        outline_toggle.connect_toggled(move |button| {
-            outline_expander.set_visible(button.is_active());
-        });
-    }
-    {
-        let search_expander = search_expander.clone();
-        search_toggle.connect_toggled(move |button| {
-            search_expander.set_visible(button.is_active());
-        });
-    }
-    {
-        let recent_expander = recent_expander.clone();
-        recent_toggle.connect_toggled(move |button| {
-            recent_expander.set_visible(button.is_active());
-        });
-    }
-    {
-        let favorites_expander = favorites_expander.clone();
-        favorites_toggle.connect_toggled(move |button| {
-            favorites_expander.set_visible(button.is_active());
-        });
-    }
+    auxiliary_stack.add_titled(&app_bookmarks_section, Some("bookmarks"), "Marcadores");
+    let auxiliary_switcher = gtk4::StackSwitcher::new();
+    auxiliary_switcher.set_stack(Some(&auxiliary_stack));
+    auxiliary_switcher.set_halign(gtk4::Align::Center);
+    auxiliary_sidebar.append(&auxiliary_switcher);
 
     let active_pages = pages_flow.clone();
     let active_outline = outline_list.clone();
@@ -881,7 +853,7 @@ pub fn build_sidebar(
             });
         });
 
-    sidebar_root
+    (sidebar_root, auxiliary_sidebar)
 }
 
 #[cfg(test)]
