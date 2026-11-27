@@ -40,6 +40,7 @@ pub(crate) struct DocumentControllerParams<'a> {
     pub title: gtk::Label,
     pub print_button: gtk::Button,
     pub toolbar_host: gtk::Box,
+    pub search_host: gtk::Box,
 }
 
 fn create_menu_button(label: &str) -> (gtk::MenuButton, gtk::Box) {
@@ -162,6 +163,8 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     header.pack_end(&print_button);
 
     let toolbar_host = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    let search_host = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    search_host.set_visible(false);
 
     let last_directory = last_directory_for_home_path();
 
@@ -185,8 +188,10 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         title: title.clone(),
         print_button: print_button.clone(),
         toolbar_host: toolbar_host.clone(),
+        search_host: search_host.clone(),
     });
     toolbar_host.append(&initial.toolbar);
+    search_host.append(&initial.search_bar);
     {
         let print_manager = tab_manager.clone();
         let fallback = initial.clone();
@@ -220,6 +225,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         print_button.clone(),
         initial.clone(),
         toolbar_host.clone(),
+        search_host.clone(),
     );
     sidebar.set_visible(false);
 
@@ -230,6 +236,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     shell.append(&menu_bar);
     shell.append(&toolbar_host);
     shell.append(&content);
+    shell.append(&search_host);
     let open_controller = initial.clone();
     let open_window = window.clone();
     let open_tab_manager = tab_manager.clone();
@@ -257,6 +264,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
             menu_open_controller.clone(),
             menu_last_directory.clone(),
             menu_open_controller.toolbar_host.clone(),
+            menu_open_controller.search_host.clone(),
         );
     });
     let menu_print_manager = tab_manager.clone();
@@ -415,6 +423,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
                 restore_tab_title.clone(),
                 restore_tab_button.clone(),
                 restore_tab_controller.toolbar_host.clone(),
+                restore_tab_controller.search_host.clone(),
             )
             .is_some()
             {
@@ -498,6 +507,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         page_bookmark_toggle_item,
     ]);
     let active_toolbar_host = toolbar_host.clone();
+    let active_search_host = search_host.clone();
     let observed_history_controllers =
         Rc::new(RefCell::new(std::collections::HashSet::<usize>::new()));
     let weak_history_back = history_back_item.downgrade();
@@ -511,6 +521,11 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
                 active_toolbar_host.remove(&current_toolbar);
             }
             active_toolbar_host.append(&controller.toolbar);
+            if let Some(current_search_bar) = active_search_host.first_child() {
+                active_search_host.remove(&current_search_bar);
+            }
+            active_search_host.append(&controller.search_bar);
+            active_search_host.set_visible(controller.search_bar.is_visible());
             let has_document = controller.state.borrow().path.is_some();
             for item in doc_sensitive_items.iter() {
                 item.set_sensitive(has_document);
@@ -601,6 +616,7 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
                 open_controller.clone(),
                 last_directory.clone(),
                 open_controller.toolbar_host.clone(),
+                open_controller.search_host.clone(),
             );
         }
     });
@@ -640,6 +656,7 @@ pub(crate) fn create_document_controller(
         title,
         print_button,
         toolbar_host,
+        search_host,
     } = params;
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
@@ -657,6 +674,7 @@ pub(crate) fn create_document_controller(
     let page_total = gtk::Label::new(Some("/ 0"));
     let next_button = action_button("go-next-symbolic", "Next page");
     next_button.set_sensitive(false);
+    let search_open_button = action_button("system-search-symbolic", "Show document search");
     let search_entry = gtk::SearchEntry::new();
     search_entry.set_placeholder_text(Some("Search in document"));
     search_entry.set_hexpand(true);
@@ -676,16 +694,26 @@ pub(crate) fn create_document_controller(
     layout_toggle.set_tooltip_text(Some("Cycle single-page, continuous, and two-page layout"));
     let rotate_left = action_button("object-rotate-left-symbolic", "Rotate left");
     let rotate_right = action_button("object-rotate-right-symbolic", "Rotate right");
+    let close_search_button = action_button("window-close-symbolic", "Close search");
+
+    let search_bar = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    search_bar.add_css_class("toolbar");
+    search_bar.set_margin_start(8);
+    search_bar.set_margin_end(8);
+    search_bar.set_margin_top(4);
+    search_bar.set_margin_bottom(4);
+    search_bar.append(&search_entry);
+    search_bar.append(&search_button);
+    search_bar.append(&prev_match);
+    search_bar.append(&next_match);
+    search_bar.append(&close_search_button);
+    search_bar.set_visible(false);
 
     toolbar.append(&previous_button);
     toolbar.append(&page_spin);
     toolbar.append(&page_total);
     toolbar.append(&next_button);
-    toolbar.append(&gtk::Separator::new(gtk::Orientation::Vertical));
-    toolbar.append(&search_entry);
-    toolbar.append(&search_button);
-    toolbar.append(&prev_match);
-    toolbar.append(&next_match);
+    toolbar.append(&search_open_button);
     toolbar.append(&gtk::Separator::new(gtk::Orientation::Vertical));
     toolbar.append(&zoom_out);
     toolbar.append(&zoom_button);
@@ -740,6 +768,8 @@ pub(crate) fn create_document_controller(
         next_button: next_button.clone(),
         zoom_button: zoom_button.clone(),
         search_entry,
+        search_host: search_host.clone(),
+        search_bar: search_bar.clone(),
         status,
         print_button,
         title,
@@ -1122,6 +1152,7 @@ pub(crate) fn create_document_controller(
                 keyboard_controller.clone(),
                 last_directory.clone(),
                 keyboard_controller.toolbar_host.clone(),
+                keyboard_controller.search_host.clone(),
             );
             return gtk::glib::Propagation::Stop;
         }
@@ -1186,6 +1217,18 @@ pub(crate) fn create_document_controller(
     search_button.connect_clicked(move |_| {
         if let Some(search_controller) = search_controller.upgrade() {
             search_controller.search_current_page();
+        }
+    });
+    let open_search_controller = Rc::downgrade(&controller);
+    search_open_button.connect_clicked(move |_| {
+        if let Some(open_search_controller) = open_search_controller.upgrade() {
+            open_search_controller.show_search();
+        }
+    });
+    let close_search_controller = Rc::downgrade(&controller);
+    close_search_button.connect_clicked(move |_| {
+        if let Some(close_search_controller) = close_search_controller.upgrade() {
+            close_search_controller.hide_search();
         }
     });
     let previous_match_controller = Rc::downgrade(&controller);

@@ -69,6 +69,7 @@ struct SidebarOpenContext {
     title_label: gtk4::Label,
     print_button: gtk4::Button,
     toolbar_host: gtk4::Box,
+    search_host: gtk4::Box,
 }
 
 fn page_range_for_sidebar(page_count: i32, current_page: i32) -> Vec<i32> {
@@ -124,6 +125,7 @@ fn append_sidebar_entry(
             row_context.title_label.clone(),
             row_context.print_button.clone(),
             row_context.toolbar_host.clone(),
+            row_context.search_host.clone(),
         );
     });
 
@@ -573,6 +575,7 @@ pub fn build_sidebar(
     print_button: gtk4::Button,
     controller: Rc<ViewerController>,
     toolbar_host: gtk4::Box,
+    search_host: gtk4::Box,
 ) -> gtk4::Box {
     let open_context = SidebarOpenContext {
         app: app.clone(),
@@ -581,6 +584,7 @@ pub fn build_sidebar(
         title_label: title_label.clone(),
         print_button: print_button.clone(),
         toolbar_host,
+        search_host,
     };
 
     let sidebar_root = gtk4::Box::new(gtk4::Orientation::Vertical, 0);

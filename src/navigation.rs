@@ -59,8 +59,7 @@ pub(crate) fn handle_key_action(controller: &ViewerController, action: KeyAction
                 .set_text("Open a PDF document using the toolbar button or menu action.");
         }
         KeyAction::FocusSearch => {
-            controller.search_entry.grab_focus();
-            controller.search_entry.select_region(0, -1);
+            controller.show_search();
         }
         KeyAction::ToggleFullscreen => toggle_fullscreen(controller),
         KeyAction::TogglePresentation => toggle_presentation_mode(controller),

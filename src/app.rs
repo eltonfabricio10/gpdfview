@@ -99,6 +99,8 @@ pub(crate) struct ViewerController {
     pub(crate) title: gtk::Label,
     pub(crate) toolbar: gtk::Box,
     pub(crate) toolbar_host: gtk::Box,
+    pub(crate) search_host: gtk::Box,
+    pub(crate) search_bar: gtk::Box,
     pub(crate) window: adw::ApplicationWindow,
     pub(crate) root: gtk::Box,
     pub(crate) state_change_hooks: Rc<RefCell<Vec<StateChangeHook>>>,
@@ -155,6 +157,18 @@ impl ViewerController {
     pub(crate) fn handle_key_action(&self, action: KeyAction) {
         handle_key_action(self, action);
         self.notify_state_changed();
+    }
+
+    pub(crate) fn show_search(&self) {
+        self.search_bar.set_visible(true);
+        self.search_host.set_visible(true);
+        self.search_entry.grab_focus();
+        self.search_entry.select_region(0, -1);
+    }
+
+    pub(crate) fn hide_search(&self) {
+        self.search_bar.set_visible(false);
+        self.search_host.set_visible(false);
     }
 
     pub(crate) fn go_page_back(&self) {
@@ -909,6 +923,7 @@ pub fn run() {
                 controller.title.clone(),
                 controller.print_button.clone(),
                 controller.toolbar_host.clone(),
+                controller.search_host.clone(),
             );
         }
     });

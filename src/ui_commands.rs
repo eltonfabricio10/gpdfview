@@ -28,8 +28,7 @@ pub(crate) fn dispatch_ui_command(
 ) {
     match command {
         UiCommand::FocusSearch => {
-            controller.search_entry.grab_focus();
-            controller.search_entry.select_region(0, -1);
+            controller.show_search();
         }
         UiCommand::ToggleSidebar => {
             if let Some(sidebar) = sidebar {

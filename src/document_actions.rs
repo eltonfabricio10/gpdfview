@@ -40,6 +40,7 @@ pub(crate) fn open_document_in_new_tab(
     title_label: gtk4::Label,
     print_button: gtk4::Button,
     toolbar_host: gtk4::Box,
+    search_host: gtk4::Box,
 ) -> Option<Rc<ViewerController>> {
     let filename = path
         .file_name()
@@ -63,6 +64,7 @@ pub(crate) fn open_document_in_new_tab(
         title: title_label,
         print_button,
         toolbar_host,
+        search_host,
     });
     tab_manager
         .borrow()
@@ -82,6 +84,7 @@ pub(crate) fn show_open_dialog(
     controller: Rc<ViewerController>,
     last_directory: Option<PathBuf>,
     toolbar_host: gtk4::Box,
+    search_host: gtk4::Box,
 ) {
     let dialog = gtk4::FileDialog::builder().title("Open PDF").build();
     let filter = gtk4::FileFilter::new();
@@ -125,6 +128,7 @@ pub(crate) fn show_open_dialog(
                         controller.title.clone(),
                         controller.print_button.clone(),
                         toolbar_host.clone(),
+                        search_host.clone(),
                     ) {
                         let _ = new_controller;
                     }
