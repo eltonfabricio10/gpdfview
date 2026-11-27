@@ -355,7 +355,7 @@ fn populate_pages_flow(
         if path_changed
             || (page_changed && (current_page < first_page || current_page >= window_end))
         {
-            *window = path;
+            *window = path.clone();
             window_state.start.set(
                 page_range_for_sidebar(page_count, current_page)
                     .first()
@@ -373,8 +373,14 @@ fn populate_pages_flow(
     let visible_pages =
         (start..(start + THUMBNAIL_WINDOW_SIZE).min(page_count)).collect::<Vec<_>>();
     if visible_pages.is_empty() {
-        let placeholder = gtk4::Label::new(Some("Carregando miniaturas…"));
+        let message = if path.is_some() {
+            "Este PDF não contém páginas disponíveis."
+        } else {
+            "Abra um PDF para ver as miniaturas."
+        };
+        let placeholder = gtk4::Label::new(Some(message));
         placeholder.set_xalign(0.0);
+        placeholder.add_css_class("dim-label");
         placeholder.set_margin_start(8);
         placeholder.set_margin_end(8);
         placeholder.set_margin_top(4);
