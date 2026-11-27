@@ -31,7 +31,7 @@
 | Split view | PARCIAL | `SplitViewMode`, `src/viewer_state.rs`, `src/window.rs`, `src/ui_commands.rs` | Independent pane navigation/scroll state and clear sync semantics |
 | Fullscreen | IMPLEMENTADO | `src/window.rs`, `src/app.rs` | Manual desktop and keyboard regression tests |
 | Presentation mode | IMPLEMENTADO | `src/app.rs`, `src/window.rs`, `src/navigation.rs` | Verify navigation, exit behavior and multi-monitor behavior |
-| Document properties | PARCIAL | `src/dialogs.rs`, `src/engine.rs`, `src/sidebar.rs` | PDF metadata, page count/version, file size/path, modal and auxiliary panel are implemented; the panel loads off the GTK thread and ignores stale results; security, page dimensions and font details remain absent |
+| Document properties | PARCIAL | `src/dialogs.rs`, `src/engine.rs`, `src/sidebar.rs`, `src/app.rs` | PDF metadata, page count/version, file size/path, modal and auxiliary panel are implemented; both reading paths run off the GTK thread, and the panel ignores stale results; security, page dimensions and font details remain absent |
 
 ## Search, navigation panels and document state
 

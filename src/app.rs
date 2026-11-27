@@ -29,6 +29,8 @@ use std::path::PathBuf;
 use std::rc::{Rc, Weak};
 use std::sync::atomic::AtomicU64;
 use std::sync::{mpsc, Arc};
+use std::thread;
+use std::time::Duration;
 
 #[cfg(test)]
 use std::fs;
@@ -349,19 +351,44 @@ impl ViewerController {
 
     pub(crate) fn show_document_properties(&self) {
         let Some(path) = self.state.borrow().path.clone() else {
-            self.show_status("Open a PDF document before viewing its properties.");
+            self.show_status("Abra um PDF antes de consultar suas propriedades.");
             return;
         };
 
-        match crate::engine::document_properties(&path) {
-            Ok(properties) => {
-                let dialog = build_document_properties_dialog(&self.window, &properties);
-                dialog.present();
-            }
-            Err(error) => {
-                self.show_status(&format!("Could not read PDF properties: {error}"));
-            }
+        self.show_status("Lendo propriedades do PDF…");
+        let (sender, receiver) = mpsc::channel();
+        if thread::Builder::new()
+            .name("gpdfview-document-properties-dialog".into())
+            .spawn(move || {
+                let _ = sender.send(crate::engine::document_properties(&path));
+            })
+            .is_err()
+        {
+            self.show_status("Não foi possível iniciar a leitura das propriedades.");
+            return;
         }
+
+        let weak_status = self.status.downgrade();
+        let weak_window = self.window.downgrade();
+        gtk::glib::timeout_add_local(Duration::from_millis(20), move || {
+            match receiver.try_recv() {
+                Ok(Ok(properties)) => {
+                    if let Some(window) = weak_window.upgrade() {
+                        let dialog = build_document_properties_dialog(&window, &properties);
+                        dialog.present();
+                    }
+                    gtk::glib::ControlFlow::Break
+                }
+                Ok(Err(error)) => {
+                    if let Some(status) = weak_status.upgrade() {
+                        status.set_text(&format!("Não foi possível ler as propriedades: {error}"));
+                    }
+                    gtk::glib::ControlFlow::Break
+                }
+                Err(mpsc::TryRecvError::Disconnected) => gtk::glib::ControlFlow::Break,
+                Err(mpsc::TryRecvError::Empty) => gtk::glib::ControlFlow::Continue,
+            }
+        });
     }
 
     pub(crate) fn show_settings_dialog(&self) {
