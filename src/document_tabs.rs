@@ -224,7 +224,7 @@ impl DocumentTabManager {
 
         let close_button = gtk4::Button::builder()
             .icon_name("window-close-symbolic")
-            .tooltip_text("Close tab")
+            .tooltip_text("Fechar aba")
             .has_frame(false)
             .focus_on_click(false)
             .build();

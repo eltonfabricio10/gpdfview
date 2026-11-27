@@ -222,5 +222,6 @@ This follow-up implements the smaller UI improvements identified from `/home/elt
 | 42 | Report interrupted sidebar properties reads | This follow-up |
 | 43 | Recover printing controls when the worker exits | This follow-up |
 | 44 | Surface worker startup errors when opening documents | This follow-up |
+| 45 | Localize the tab close tooltip | This follow-up |
 
 The runtime screenshot comparison remains open. This environment did not provide a controlled gpdfview window for capture during this pass, so `docs/UI_REFERENCE.md` records source-level findings and the exact visual checks still needed.
