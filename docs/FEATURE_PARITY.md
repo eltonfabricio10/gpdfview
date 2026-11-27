@@ -57,7 +57,7 @@
 | Capability | gpdfview status | Evidence in gpdfview | Remaining work |
 |---|---|---|---|
 | Send original PDF to CUPS (`lp`) | PARCIAL | `src/printing.rs::submit_to_cups`, `src/rendering.rs` | Uses default destination; status messages for print submission and fallback are localized, and worker disconnection restores the button and reports failure; no printer chooser; backend compatibility and real jobs unverified |
-| Rendered-PDF fallback using Poppler/Cairo | PARCIAL | `src/printing.rs::render_for_printing` | Verify output page dimensions, memory behavior and double-scaling risk |
+| Rendered-PDF fallback using Poppler/Cairo | PARCIAL | `src/printing.rs::render_for_printing` | PDF page loading/dimension errors use Portuguese messages; verify output page dimensions, memory behavior and double-scaling risk |
 | Select page range and copies | IMPLEMENTADO | `src/printing.rs`, print dialog in `src/app.rs` | Validate against actual printers/IPP backends |
 | Printer selection, paper size, advanced media/quality | AUSENTE | No complete printer destination/media selection flow found | Integrate printer capabilities from CUPS/GTK print APIs |
 | PDF annotations | AUSENTE | No annotation editing path found | Decide scope and Poppler/backend feasibility |

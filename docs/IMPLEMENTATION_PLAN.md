@@ -227,5 +227,6 @@ This follow-up implements the smaller UI improvements identified from `/home/elt
 | 47 | Localize print service results and errors | This follow-up |
 | 48 | Localize renderer and print worker startup errors | This follow-up |
 | 49 | Localize preference persistence errors | This follow-up |
+| 50 | Localize CUPS and printable-page errors | This follow-up |
 
 The runtime screenshot comparison remains open. This environment did not provide a controlled gpdfview window for capture during this pass, so `docs/UI_REFERENCE.md` records source-level findings and the exact visual checks still needed.

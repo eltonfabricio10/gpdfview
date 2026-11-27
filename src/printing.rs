@@ -205,14 +205,14 @@ fn submit_to_cups(path: &Path, options: &PrintOptions) -> Result<String, String>
 
     let output = command
         .output()
-        .map_err(|error| format!("could not start CUPS lp: {error}"))?;
+        .map_err(|error| format!("Não foi possível iniciar o comando de impressão lp: {error}"))?;
 
     if output.status.success() {
         Ok(String::from_utf8_lossy(&output.stdout).trim().to_string())
     } else {
         let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
         Err(if detail.is_empty() {
-            format!("lp exited with {}", output.status)
+            format!("O comando lp terminou com o estado {}.", output.status)
         } else {
             detail
         })
@@ -249,10 +249,13 @@ fn render_for_printing(
     for page_index in start_page..=end_page {
         let page = document
             .page(page_index)
-            .ok_or_else(|| format!("Could not load page {}", page_index + 1))?;
+            .ok_or_else(|| format!("Não foi possível carregar a página {}.", page_index + 1))?;
         let (width, height) = page.size();
         if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
-            return Err(format!("Page {} has invalid dimensions", page_index + 1));
+            return Err(format!(
+                "A página {} tem dimensões inválidas.",
+                page_index + 1
+            ));
         }
         let target_width = width * scale;
         let target_height = height * scale;
