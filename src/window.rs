@@ -26,7 +26,7 @@ use crate::session::{
     newest_valid_recent_document, remember_resume_last_document, remember_window_geometry,
     remember_window_state, should_resume_last_document,
 };
-use crate::sidebar::build_sidebar;
+use crate::sidebar::{build_sidebar, SidebarBuildContext};
 use crate::ui_commands::{dispatch_ui_command, UiCommand};
 use crate::ui_helpers::action_button;
 use crate::viewer_state::{LayoutMode, SplitViewMode, ViewerState, DEFAULT_ZOOM};
@@ -254,16 +254,16 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         }
     }
 
-    let (sidebar, auxiliary_sidebar) = build_sidebar(
-        app,
-        &window,
-        tab_manager.clone(),
-        title.clone(),
-        print_button.clone(),
-        initial.clone(),
-        toolbar_host.clone(),
-        search_host.clone(),
-    );
+    let (sidebar, auxiliary_sidebar) = build_sidebar(&SidebarBuildContext {
+        app: app.clone(),
+        window: window.clone(),
+        tab_manager: tab_manager.clone(),
+        title_label: title.clone(),
+        print_button: print_button.clone(),
+        controller: initial.clone(),
+        toolbar_host: toolbar_host.clone(),
+        search_host: search_host.clone(),
+    });
     sidebar.set_visible(true);
     auxiliary_sidebar.set_visible(false);
 

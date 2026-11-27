@@ -33,6 +33,16 @@ struct ThumbnailWindowState {
     current_page: Cell<i32>,
 }
 
+#[derive(Clone)]
+struct ThumbnailContext {
+    cache: Rc<RefCell<LruCache<RenderKey, gtk4::cairo::ImageSurface>>>,
+    generation: Arc<AtomicU64>,
+    workers: Arc<AtomicUsize>,
+    window_state: Rc<ThumbnailWindowState>,
+    previous_button: gtk4::Button,
+    next_button: gtk4::Button,
+}
+
 struct ThumbnailWorkerPermit(Arc<AtomicUsize>);
 
 impl Drop for ThumbnailWorkerPermit {
@@ -314,14 +324,9 @@ fn build_page_thumbnail_button(
 fn populate_pages_flow(
     pages_flow: &gtk4::FlowBox,
     controller: &ViewerController,
-    thumbnail_cache: &Rc<RefCell<LruCache<RenderKey, gtk4::cairo::ImageSurface>>>,
-    thumbnail_generation: &Arc<AtomicU64>,
-    active_thumbnail_workers: &Arc<AtomicUsize>,
-    window_state: &Rc<ThumbnailWindowState>,
-    previous_window_button: &gtk4::Button,
-    next_window_button: &gtk4::Button,
+    thumbnail: &ThumbnailContext,
 ) {
-    let generation_id = thumbnail_generation.fetch_add(1, Ordering::Relaxed) + 1;
+    let generation_id = thumbnail.generation.fetch_add(1, Ordering::Relaxed) + 1;
     while let Some(child) = pages_flow.first_child() {
         pages_flow.remove(&child);
     }
@@ -333,12 +338,13 @@ fn populate_pages_flow(
     drop(state);
 
     let start = {
-        let mut window = window_state.path.borrow_mut();
+        let mut window = thumbnail.window_state.path.borrow_mut();
         let path_changed = *window != path;
-        let page_changed = window_state.current_page.replace(current_page) != current_page;
+        let page_changed =
+            thumbnail.window_state.current_page.replace(current_page) != current_page;
         if path_changed || page_changed {
             *window = path.clone();
-            window_state.start.set(
+            thumbnail.window_state.start.set(
                 page_range_for_sidebar(page_count, current_page)
                     .first()
                     .copied()
@@ -346,16 +352,16 @@ fn populate_pages_flow(
             );
         }
         let max_start = (page_count - 1).max(0);
-        let start = window_state.start.get().clamp(0, max_start);
-        window_state.start.set(start);
+        let start = thumbnail.window_state.start.get().clamp(0, max_start);
+        thumbnail.window_state.start.set(start);
         start
     };
     let has_previous_window = start > 0;
     let has_next_window = start + THUMBNAIL_WINDOW_SIZE < page_count;
-    previous_window_button.set_visible(has_previous_window);
-    previous_window_button.set_sensitive(has_previous_window);
-    next_window_button.set_visible(has_next_window);
-    next_window_button.set_sensitive(has_next_window);
+    thumbnail.previous_button.set_visible(has_previous_window);
+    thumbnail.previous_button.set_sensitive(has_previous_window);
+    thumbnail.next_button.set_visible(has_next_window);
+    thumbnail.next_button.set_sensitive(has_next_window);
     let visible_pages =
         (start..(start + THUMBNAIL_WINDOW_SIZE).min(page_count)).collect::<Vec<_>>();
     if visible_pages.is_empty() {
@@ -389,9 +395,9 @@ fn populate_pages_flow(
     for page_index in visible_pages {
         let page_button = build_page_thumbnail_button(
             controller,
-            thumbnail_cache,
-            thumbnail_generation.clone(),
-            active_thumbnail_workers.clone(),
+            &thumbnail.cache,
+            thumbnail.generation.clone(),
+            thumbnail.workers.clone(),
             generation_id,
             page_index,
             page_index == current_page,
@@ -405,27 +411,14 @@ fn shift_thumbnail_window(
     direction: i32,
     pages_flow: &gtk4::FlowBox,
     controller: &ViewerController,
-    thumbnail_cache: &Rc<RefCell<LruCache<RenderKey, gtk4::cairo::ImageSurface>>>,
-    thumbnail_generation: &Arc<AtomicU64>,
-    active_thumbnail_workers: &Arc<AtomicUsize>,
-    window_state: &Rc<ThumbnailWindowState>,
-    previous_window_button: &gtk4::Button,
-    next_window_button: &gtk4::Button,
+    thumbnail: &ThumbnailContext,
 ) {
     let page_count = controller.state.borrow().page_count;
     let max_start = (page_count - 1).max(0);
-    let start = (window_state.start.get() + direction * THUMBNAIL_WINDOW_SIZE).clamp(0, max_start);
-    window_state.start.set(start);
-    populate_pages_flow(
-        pages_flow,
-        controller,
-        thumbnail_cache,
-        thumbnail_generation,
-        active_thumbnail_workers,
-        window_state,
-        previous_window_button,
-        next_window_button,
-    );
+    let start = (thumbnail.window_state.start.get() + direction * THUMBNAIL_WINDOW_SIZE)
+        .clamp(0, max_start);
+    thumbnail.window_state.start.set(start);
+    populate_pages_flow(pages_flow, controller, thumbnail);
 }
 
 fn populate_outline_list(
@@ -814,16 +807,28 @@ fn append_sidebar_message(list: &gtk4::ListBox, message: &str) {
     list.append(&row);
 }
 
-pub fn build_sidebar(
-    app: &adw::Application,
-    window: &adw::ApplicationWindow,
-    tab_manager: Rc<RefCell<DocumentTabManager>>,
-    title_label: gtk4::Label,
-    print_button: gtk4::Button,
-    controller: Rc<ViewerController>,
-    toolbar_host: gtk4::Box,
-    search_host: gtk4::Box,
-) -> (gtk4::Box, gtk4::Box) {
+#[derive(Clone)]
+pub struct SidebarBuildContext {
+    pub app: adw::Application,
+    pub window: adw::ApplicationWindow,
+    pub tab_manager: Rc<RefCell<DocumentTabManager>>,
+    pub title_label: gtk4::Label,
+    pub print_button: gtk4::Button,
+    pub controller: Rc<ViewerController>,
+    pub toolbar_host: gtk4::Box,
+    pub search_host: gtk4::Box,
+}
+
+pub fn build_sidebar(context: &SidebarBuildContext) -> (gtk4::Box, gtk4::Box) {
+    let app = &context.app;
+    let window = &context.window;
+    let tab_manager = context.tab_manager.clone();
+    let title_label = context.title_label.clone();
+    let print_button = context.print_button.clone();
+    let controller = context.controller.clone();
+    let toolbar_host = context.toolbar_host.clone();
+    let search_host = context.search_host.clone();
+
     let open_context = SidebarOpenContext {
         open_document: OpenDocumentContext {
             app: app.clone(),
@@ -932,28 +937,18 @@ pub fn build_sidebar(
     pages_flow.set_homogeneous(false);
     pages_flow.set_row_spacing(8);
     pages_flow.set_column_spacing(0);
-    let thumbnail_cache = Rc::new(RefCell::new(LruCache::new(THUMBNAIL_CACHE_BYTES)));
-    let thumbnail_generation = Arc::new(AtomicU64::new(0));
-    let active_thumbnail_workers = Arc::new(AtomicUsize::new(0));
-    let thumbnail_window_state = Rc::new(ThumbnailWindowState::default());
-    populate_pages_flow(
-        &pages_flow,
-        &controller,
-        &thumbnail_cache,
-        &thumbnail_generation,
-        &active_thumbnail_workers,
-        &thumbnail_window_state,
-        &previous_window_button,
-        &next_window_button,
-    );
+    let thumbnail_context = ThumbnailContext {
+        cache: Rc::new(RefCell::new(LruCache::new(THUMBNAIL_CACHE_BYTES))),
+        generation: Arc::new(AtomicU64::new(0)),
+        workers: Arc::new(AtomicUsize::new(0)),
+        window_state: Rc::new(ThumbnailWindowState::default()),
+        previous_button: previous_window_button.clone(),
+        next_button: next_window_button.clone(),
+    };
+    populate_pages_flow(&pages_flow, &controller, &thumbnail_context);
     for (button, direction) in [(&previous_window_button, -1), (&next_window_button, 1)] {
         let pages_flow = pages_flow.clone();
-        let thumbnail_cache = thumbnail_cache.clone();
-        let thumbnail_generation = thumbnail_generation.clone();
-        let active_thumbnail_workers = active_thumbnail_workers.clone();
-        let thumbnail_window_state = thumbnail_window_state.clone();
-        let previous_window_button = previous_window_button.clone();
-        let next_window_button = next_window_button.clone();
+        let thumbnail = thumbnail_context.clone();
         let manager = Rc::downgrade(&tab_manager);
         button.connect_clicked(move |_| {
             let Some(controller) = manager
@@ -962,17 +957,7 @@ pub fn build_sidebar(
             else {
                 return;
             };
-            shift_thumbnail_window(
-                direction,
-                &pages_flow,
-                &controller,
-                &thumbnail_cache,
-                &thumbnail_generation,
-                &active_thumbnail_workers,
-                &thumbnail_window_state,
-                &previous_window_button,
-                &next_window_button,
-            );
+            shift_thumbnail_window(direction, &pages_flow, &controller, &thumbnail);
         });
     }
     let thumbnails_section = gtk4::Box::new(gtk4::Orientation::Vertical, 0);
@@ -1103,27 +1088,13 @@ pub fn build_sidebar(
     let active_bookmarks = app_bookmarks_list.clone();
     let active_properties = properties_list.clone();
     let active_properties_generation = properties_generation.clone();
-    let active_thumbnail_cache = thumbnail_cache.clone();
-    let active_thumbnail_generation = thumbnail_generation.clone();
-    let active_thumbnail_workers = active_thumbnail_workers.clone();
-    let active_thumbnail_window_state = thumbnail_window_state.clone();
-    let active_previous_window_button = previous_window_button.clone();
-    let active_next_window_button = next_window_button.clone();
+    let active_thumbnail = thumbnail_context.clone();
     let observed_controllers = Rc::new(RefCell::new(std::collections::HashSet::new()));
     let weak_tab_manager = Rc::downgrade(&tab_manager);
     tab_manager
         .borrow()
         .subscribe_active_controller(move |active_controller| {
-            populate_pages_flow(
-                &active_pages,
-                &active_controller,
-                &active_thumbnail_cache,
-                &active_thumbnail_generation,
-                &active_thumbnail_workers,
-                &active_thumbnail_window_state,
-                &active_previous_window_button,
-                &active_next_window_button,
-            );
+            populate_pages_flow(&active_pages, &active_controller, &active_thumbnail);
             populate_outline_list(
                 &active_outline,
                 active_controller.clone(),
@@ -1149,12 +1120,7 @@ pub fn build_sidebar(
             let properties = active_properties.clone();
             let properties_generation = active_properties_generation.clone();
             let outline_generation = outline_generation.clone();
-            let cache = active_thumbnail_cache.clone();
-            let thumbnail_generation = active_thumbnail_generation.clone();
-            let thumbnail_workers = active_thumbnail_workers.clone();
-            let thumbnail_window_state = active_thumbnail_window_state.clone();
-            let previous_window_button = active_previous_window_button.clone();
-            let next_window_button = active_next_window_button.clone();
+            let thumbnail = active_thumbnail.clone();
             let manager = weak_tab_manager.clone();
             let properties_path =
                 Rc::new(RefCell::new(active_controller.state.borrow().path.clone()));
@@ -1173,16 +1139,7 @@ pub fn build_sidebar(
                 let Some(controller) = manager.borrow().active_controller() else {
                     return;
                 };
-                populate_pages_flow(
-                    &pages,
-                    &controller,
-                    &cache,
-                    &thumbnail_generation,
-                    &thumbnail_workers,
-                    &thumbnail_window_state,
-                    &previous_window_button,
-                    &next_window_button,
-                );
+                populate_pages_flow(&pages, &controller, &thumbnail);
                 populate_outline_list(&outline, controller.clone(), outline_generation.clone());
                 populate_search_results_list(&search, &controller);
                 populate_app_bookmarks_list(&bookmarks, &controller);
