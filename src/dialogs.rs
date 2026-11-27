@@ -4,6 +4,65 @@ use gtk4::prelude::*;
 use crate::app::ViewerController;
 use crate::session::{save_app_settings_for_home, AppSettings};
 
+fn normalized_shortcut(value: &str) -> Option<String> {
+    let fragments = value
+        .split('+')
+        .map(str::trim)
+        .filter(|fragment| !fragment.is_empty())
+        .map(|fragment| fragment.to_ascii_lowercase().replace(['_', '-', ' '], ""))
+        .collect::<Vec<_>>();
+    let key = fragments.last()?;
+    let valid_key = key.len() == 1 && key.as_bytes()[0].is_ascii_alphanumeric()
+        || matches!(
+            key.as_str(),
+            "space"
+                | "pagedown"
+                | "pageup"
+                | "home"
+                | "end"
+                | "plus"
+                | "minus"
+                | "kpadd"
+                | "kpsubtract"
+                | "left"
+                | "right"
+                | "up"
+                | "down"
+                | "tab"
+                | "escape"
+                | "return"
+                | "enter"
+                | "backspace"
+                | "delete"
+                | "insert"
+        )
+        || key
+            .strip_prefix('f')
+            .and_then(|number| number.parse::<u8>().ok())
+            .is_some_and(|number| (1..=35).contains(&number));
+    if !valid_key {
+        return None;
+    }
+
+    let mut modifiers = Vec::new();
+    for modifier in fragments.iter().take(fragments.len().saturating_sub(1)) {
+        let canonical = match modifier.as_str() {
+            "ctrl" | "control" => "ctrl",
+            "alt" => "alt",
+            "shift" => "shift",
+            "meta" | "super" | "cmd" => "meta",
+            _ => return None,
+        };
+        if modifiers.contains(&canonical) {
+            return None;
+        }
+        modifiers.push(canonical);
+    }
+    modifiers.sort_unstable();
+    modifiers.push(key);
+    Some(modifiers.join("+"))
+}
+
 pub(crate) fn build_document_properties_dialog(
     parent: &impl IsA<gtk::Window>,
     properties: &[(String, String)],
@@ -136,6 +195,10 @@ pub(crate) fn build_settings_dialog(
         ("toggle_presentation", "Apresentação"),
         ("zoom_in", "Zoom +"),
         ("zoom_out", "Zoom -"),
+        ("fit_width", "Ajustar à largura"),
+        ("fit_page", "Ajustar à página"),
+        ("rotate_left", "Girar à esquerda"),
+        ("rotate_right", "Girar à direita"),
     ];
     let shortcut_entries = shortcut_actions
         .iter()
@@ -152,6 +215,12 @@ pub(crate) fn build_settings_dialog(
             entry
         })
         .collect::<Vec<_>>();
+    let shortcut_error = gtk::Label::new(None);
+    shortcut_error.set_xalign(0.0);
+    shortcut_error.set_wrap(true);
+    shortcut_error.add_css_class("error");
+    shortcut_error.set_visible(false);
+    shortcut_grid.attach(&shortcut_error, 0, shortcut_actions.len() as i32, 2, 1);
     shortcuts_section.set_child(Some(&shortcut_grid));
     settings_sections.append(&shortcuts_section);
     content.append(&settings_sections);
@@ -174,7 +243,30 @@ pub(crate) fn build_settings_dialog(
     let layout_ids_for_save = layout_ids;
     let zoom_entry_for_save = zoom_entry.clone();
     let sync_switch_for_save = sync_switch.clone();
+    let shortcut_error_for_save = shortcut_error.clone();
     save_button.connect_clicked(move |_| {
+        let mut normalized_shortcuts = std::collections::HashSet::new();
+        let mut shortcut_values = Vec::with_capacity(shortcut_actions.len());
+        for entry in &shortcut_entries_for_save {
+            let value = entry.text().to_string().trim().to_string();
+            let Some(normalized) = normalized_shortcut(&value) else {
+                shortcut_error_for_save
+                    .set_text("Use uma tecla válida, como Ctrl+O, F5, PageDown ou Home.");
+                shortcut_error_for_save.set_visible(true);
+                entry.grab_focus();
+                return;
+            };
+            if !normalized_shortcuts.insert(normalized) {
+                shortcut_error_for_save
+                    .set_text("Cada ação precisa ter uma combinação de teclas diferente.");
+                shortcut_error_for_save.set_visible(true);
+                entry.grab_focus();
+                return;
+            }
+            shortcut_values.push(value);
+        }
+        shortcut_error_for_save.set_visible(false);
+
         let mut next_settings = settings_for_save.clone();
         let selected_layout_index = layout_combo_for_save.selected() as usize;
         next_settings.default_layout = layout_ids_for_save
@@ -186,14 +278,8 @@ pub(crate) fn build_settings_dialog(
         if let Ok(parsed) = zoom_entry_for_save.text().to_string().parse::<f64>() {
             next_settings.zoom_step = parsed.clamp(0.05, 1.0);
         }
-        for ((action, _), entry) in shortcut_actions
-            .iter()
-            .zip(shortcut_entries_for_save.iter())
-        {
-            let value = entry.text().to_string();
-            if !value.trim().is_empty() {
-                next_settings.shortcuts.insert((*action).to_string(), value);
-            }
+        for ((action, _), value) in shortcut_actions.iter().zip(shortcut_values) {
+            next_settings.shortcuts.insert((*action).to_string(), value);
         }
         let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
         save_app_settings_for_home(std::path::Path::new(&home), &next_settings);
