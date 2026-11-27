@@ -21,9 +21,9 @@ use crate::layout::{
 use crate::printing::PrintService;
 use crate::session::{
     last_directory_for_home_path, last_window_geometry_for_home_path,
-    last_window_state_for_home_path, load_recent_documents, newest_valid_recent_document,
-    remember_resume_last_document, remember_window_geometry, remember_window_state,
-    should_resume_last_document,
+    last_window_state_for_home_path, load_app_settings, load_recent_documents,
+    newest_valid_recent_document, remember_resume_last_document, remember_window_geometry,
+    remember_window_state, should_resume_last_document,
 };
 use crate::sidebar::build_sidebar;
 use crate::ui_commands::{dispatch_ui_command, UiCommand};
@@ -65,11 +65,35 @@ fn append_menu_item<F>(menu_box: &gtk::Box, label: &str, on_click: F) -> gtk::Bu
 where
     F: Fn() + 'static,
 {
+    append_menu_item_with_shortcut(menu_box, label, None, on_click)
+}
+
+fn append_menu_item_with_shortcut<F>(
+    menu_box: &gtk::Box,
+    label: &str,
+    shortcut: Option<&str>,
+    on_click: F,
+) -> gtk::Button
+where
+    F: Fn() + 'static,
+{
     let item = gtk::Button::with_label(label);
     item.set_halign(gtk::Align::Fill);
     item.set_hexpand(true);
     item.set_has_frame(false);
     item.add_css_class("flat");
+    if let Some(shortcut) = shortcut.filter(|shortcut| !shortcut.is_empty()) {
+        let content = gtk::Box::new(gtk::Orientation::Horizontal, 24);
+        let title = gtk::Label::new(Some(label));
+        title.set_xalign(0.0);
+        title.set_hexpand(true);
+        let key = gtk::Label::new(Some(shortcut));
+        key.set_xalign(1.0);
+        key.add_css_class("dim-label");
+        content.append(&title);
+        content.append(&key);
+        item.set_child(Some(&content));
+    }
     item.connect_clicked(move |_| on_click());
     menu_box.append(&item);
     item
@@ -254,17 +278,23 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     let menu_open_app = open_app.clone();
     let menu_open_window = open_window.clone();
     let menu_last_directory = last_directory.clone();
-    let file_open_item = append_menu_item(&file_menu_box, "Abrir PDF...", move || {
-        show_open_dialog(
-            menu_open_app.clone(),
-            menu_open_window.clone(),
-            menu_open_tab_manager.clone(),
-            menu_open_controller.clone(),
-            menu_last_directory.clone(),
-            menu_open_controller.toolbar_host.clone(),
-            menu_open_controller.search_host.clone(),
-        );
-    });
+    let menu_shortcuts = load_app_settings().shortcuts;
+    let file_open_item = append_menu_item_with_shortcut(
+        &file_menu_box,
+        "Abrir PDF...",
+        menu_shortcuts.get("open_file").map(String::as_str),
+        move || {
+            show_open_dialog(
+                menu_open_app.clone(),
+                menu_open_window.clone(),
+                menu_open_tab_manager.clone(),
+                menu_open_controller.clone(),
+                menu_last_directory.clone(),
+                menu_open_controller.toolbar_host.clone(),
+                menu_open_controller.search_host.clone(),
+            );
+        },
+    );
     let menu_print_manager = tab_manager.clone();
     let menu_print_fallback = initial.clone();
     let file_print_item = append_menu_item(&file_menu_box, "Imprimir", move || {
@@ -282,13 +312,18 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
 
     let menu_search_manager = tab_manager.clone();
     let menu_search_fallback = initial.clone();
-    let edit_focus_item = append_menu_item(&edit_menu_box, "Focar busca", move || {
-        dispatch_ui_command(
-            &active_controller(&menu_search_manager, &menu_search_fallback),
-            UiCommand::FocusSearch,
-            None,
-        );
-    });
+    let edit_focus_item = append_menu_item_with_shortcut(
+        &edit_menu_box,
+        "Focar busca",
+        menu_shortcuts.get("focus_search").map(String::as_str),
+        move || {
+            dispatch_ui_command(
+                &active_controller(&menu_search_manager, &menu_search_fallback),
+                UiCommand::FocusSearch,
+                None,
+            );
+        },
+    );
     let edit_next_manager = tab_manager.clone();
     let edit_next_fallback = initial.clone();
     let edit_next_match_item = append_menu_item(&edit_menu_box, "Próximo resultado", move || {
@@ -301,16 +336,22 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     });
     let first_page_manager = tab_manager.clone();
     let first_page_fallback = initial.clone();
-    let first_page_item = append_menu_item(&edit_menu_box, "Primeira página", move || {
-        active_controller(&first_page_manager, &first_page_fallback)
-            .handle_key_action(KeyAction::FirstPage);
-    });
+    let first_page_item = append_menu_item_with_shortcut(
+        &edit_menu_box,
+        "Primeira página",
+        Some("Home"),
+        move || {
+            active_controller(&first_page_manager, &first_page_fallback)
+                .handle_key_action(KeyAction::FirstPage);
+        },
+    );
     let last_page_manager = tab_manager.clone();
     let last_page_fallback = initial.clone();
-    let last_page_item = append_menu_item(&edit_menu_box, "Última página", move || {
-        active_controller(&last_page_manager, &last_page_fallback)
-            .handle_key_action(KeyAction::LastPage);
-    });
+    let last_page_item =
+        append_menu_item_with_shortcut(&edit_menu_box, "Última página", Some("End"), move || {
+            active_controller(&last_page_manager, &last_page_fallback)
+                .handle_key_action(KeyAction::LastPage);
+        });
     first_page_item.set_sensitive(false);
     last_page_item.set_sensitive(false);
     edit_next_match_item.set_sensitive(false);
@@ -347,23 +388,34 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         });
     let view_fullscreen_manager = tab_manager.clone();
     let view_fullscreen_fallback = initial.clone();
-    let view_fullscreen_item = append_menu_item(&view_menu_box, "Tela cheia", move || {
-        dispatch_ui_command(
-            &active_controller(&view_fullscreen_manager, &view_fullscreen_fallback),
-            UiCommand::ToggleFullscreen,
-            None,
-        );
-    });
+    let view_fullscreen_item = append_menu_item_with_shortcut(
+        &view_menu_box,
+        "Tela cheia",
+        menu_shortcuts.get("toggle_fullscreen").map(String::as_str),
+        move || {
+            dispatch_ui_command(
+                &active_controller(&view_fullscreen_manager, &view_fullscreen_fallback),
+                UiCommand::ToggleFullscreen,
+                None,
+            );
+        },
+    );
     let view_presentation_manager = tab_manager.clone();
     let view_presentation_fallback = initial.clone();
-    let view_presentation_item =
-        append_menu_item(&view_menu_box, "Modo de apresentação", move || {
+    let view_presentation_item = append_menu_item_with_shortcut(
+        &view_menu_box,
+        "Modo de apresentação",
+        menu_shortcuts
+            .get("toggle_presentation")
+            .map(String::as_str),
+        move || {
             dispatch_ui_command(
                 &active_controller(&view_presentation_manager, &view_presentation_fallback),
                 UiCommand::TogglePresentation,
                 None,
             );
-        });
+        },
+    );
     let view_split_horizontal_manager = tab_manager.clone();
     let view_split_horizontal_fallback = initial.clone();
     let view_split_horizontal_item =
