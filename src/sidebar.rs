@@ -604,18 +604,12 @@ fn populate_search_results_list(list: &gtk4::ListBox, controller: &ViewerControl
     }
 }
 
-fn populate_properties_list(list: &gtk4::ListBox, controller: &ViewerController) {
+fn populate_properties_result(list: &gtk4::ListBox, result: Result<Vec<(String, String)>, String>) {
     while let Some(child) = list.first_child() {
         list.remove(&child);
     }
 
-    let path = controller.state.borrow().path.clone();
-    let Some(path) = path else {
-        append_sidebar_message(list, "Abra um PDF para ver suas propriedades.");
-        return;
-    };
-
-    match crate::engine::document_properties(&path) {
+    match result {
         Ok(properties) if properties.is_empty() => {
             append_sidebar_message(list, "Nenhuma propriedade disponível.");
         }
@@ -645,6 +639,58 @@ fn populate_properties_list(list: &gtk4::ListBox, controller: &ViewerController)
             &format!("Não foi possível ler as propriedades: {error}"),
         ),
     }
+}
+
+fn populate_properties_list(
+    list: &gtk4::ListBox,
+    controller: &ViewerController,
+    generation: Arc<AtomicU64>,
+) {
+    let generation_id = generation.fetch_add(1, Ordering::AcqRel) + 1;
+    while let Some(child) = list.first_child() {
+        list.remove(&child);
+    }
+
+    let path = controller.state.borrow().path.clone();
+    let Some(path) = path else {
+        append_sidebar_message(list, "Abra um PDF para ver suas propriedades.");
+        return;
+    };
+    append_sidebar_message(list, "Carregando propriedades…");
+
+    let weak_list = list.downgrade();
+    let generation_for_worker = generation.clone();
+    let (sender, receiver) = mpsc::channel();
+    if thread::Builder::new()
+        .name("gpdfview-properties".into())
+        .spawn(move || {
+            if generation_for_worker.load(Ordering::Acquire) != generation_id {
+                return;
+            }
+            let result = crate::engine::document_properties(&path);
+            let _ = sender.send(result);
+        })
+        .is_err()
+    {
+        populate_properties_result(list, Err("Não foi possível iniciar a leitura.".to_string()));
+        return;
+    }
+
+    gtk4::glib::timeout_add_local(Duration::from_millis(20), move || {
+        if generation.load(Ordering::Acquire) != generation_id || weak_list.upgrade().is_none() {
+            return gtk4::glib::ControlFlow::Break;
+        }
+        match receiver.try_recv() {
+            Ok(result) => {
+                if let Some(list) = weak_list.upgrade() {
+                    populate_properties_result(&list, result);
+                }
+                gtk4::glib::ControlFlow::Break
+            }
+            Err(mpsc::TryRecvError::Disconnected) => gtk4::glib::ControlFlow::Break,
+            Err(mpsc::TryRecvError::Empty) => gtk4::glib::ControlFlow::Continue,
+        }
+    });
 }
 
 fn append_sidebar_message(list: &gtk4::ListBox, message: &str) {
@@ -885,7 +931,8 @@ pub fn build_sidebar(
     let properties_list = gtk4::ListBox::new();
     properties_list.set_selection_mode(gtk4::SelectionMode::None);
     properties_list.set_css_classes(&["boxed-list"]);
-    populate_properties_list(&properties_list, &controller);
+    let properties_generation = Arc::new(AtomicU64::new(0));
+    populate_properties_list(&properties_list, &controller, properties_generation.clone());
     let properties_section = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
     let properties_title = gtk4::Label::new(Some("<b>Propriedades</b>"));
     properties_title.set_use_markup(true);
@@ -903,6 +950,7 @@ pub fn build_sidebar(
     let active_search = search_list.clone();
     let active_bookmarks = app_bookmarks_list.clone();
     let active_properties = properties_list.clone();
+    let active_properties_generation = properties_generation.clone();
     let active_thumbnail_cache = thumbnail_cache.clone();
     let active_thumbnail_generation = thumbnail_generation.clone();
     let active_thumbnail_workers = active_thumbnail_workers.clone();
@@ -925,7 +973,11 @@ pub fn build_sidebar(
             );
             populate_search_results_list(&active_search, &active_controller);
             populate_app_bookmarks_list(&active_bookmarks, &active_controller);
-            populate_properties_list(&active_properties, &active_controller);
+            populate_properties_list(
+                &active_properties,
+                &active_controller,
+                active_properties_generation.clone(),
+            );
 
             let controller_id = Rc::as_ptr(&active_controller.state) as usize;
             if !observed_controllers.borrow_mut().insert(controller_id) {
@@ -937,6 +989,7 @@ pub fn build_sidebar(
             let search = active_search.clone();
             let bookmarks = active_bookmarks.clone();
             let properties = active_properties.clone();
+            let properties_generation = active_properties_generation.clone();
             let outline_generation = outline_generation.clone();
             let cache = active_thumbnail_cache.clone();
             let thumbnail_generation = active_thumbnail_generation.clone();
@@ -973,7 +1026,11 @@ pub fn build_sidebar(
                 let mut previous_path = observed_properties_path.borrow_mut();
                 if *previous_path != current_path {
                     *previous_path = current_path;
-                    populate_properties_list(&properties, &controller);
+                    populate_properties_list(
+                        &properties,
+                        &controller,
+                        properties_generation.clone(),
+                    );
                 }
             });
         });
