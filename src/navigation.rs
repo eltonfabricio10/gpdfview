@@ -126,6 +126,31 @@ pub(crate) fn change_zoom(controller: &ViewerController, delta: f64) {
     controller.request_render(path, page_index, scale, rotation);
 }
 
+pub(crate) fn set_zoom(controller: &ViewerController, scale: f64) {
+    let (path, page_index, scale, rotation) = {
+        let mut state = controller.state.borrow_mut();
+        if state.page_count == 0 {
+            return;
+        }
+        let path = state.path.clone();
+        let current_page = state.page_index;
+        let current_rotation = state.rotation;
+        let target_scale = sanitize_scale(scale);
+        let render_context = apply_render_request(
+            &mut state,
+            path,
+            current_page,
+            target_scale,
+            current_rotation,
+        );
+        match render_context {
+            Some((path, page_index, scale, rotation)) => (path, page_index, scale, rotation),
+            None => return,
+        }
+    };
+    controller.request_render(path, page_index, scale, rotation);
+}
+
 pub(crate) fn rotate_page(controller: &ViewerController, delta: i32) {
     let (path, page_index, scale, rotation) = {
         let mut state = controller.state.borrow_mut();

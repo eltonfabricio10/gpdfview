@@ -587,7 +587,11 @@ pub(crate) fn create_document_controller(
     let prev_match = action_button("go-up-symbolic", "Previous match");
     let next_match = action_button("go-down-symbolic", "Next match");
     let zoom_out = action_button("zoom-out-symbolic", "Zoom out");
-    let zoom_label = gtk::Label::new(Some("100%"));
+    let (zoom_button, zoom_menu_box) = create_menu_button("100%");
+    zoom_button.set_has_frame(true);
+    zoom_button.set_tooltip_text(Some("Choose zoom level"));
+    zoom_button.set_size_request(88, -1);
+    zoom_button.set_sensitive(false);
     let zoom_in = action_button("zoom-in-symbolic", "Zoom in");
     let fit_width = action_button("zoom-fit-best-symbolic", "Fit width");
     let fit_page = action_button("zoom-fit-best-symbolic", "Fit page");
@@ -607,7 +611,7 @@ pub(crate) fn create_document_controller(
     toolbar.append(&next_match);
     toolbar.append(&gtk::Separator::new(gtk::Orientation::Vertical));
     toolbar.append(&zoom_out);
-    toolbar.append(&zoom_label);
+    toolbar.append(&zoom_button);
     toolbar.append(&zoom_in);
     toolbar.append(&fit_width);
     toolbar.append(&fit_page);
@@ -657,7 +661,7 @@ pub(crate) fn create_document_controller(
         suppress_spin_events: Rc::new(Cell::new(false)),
         page_total,
         next_button: next_button.clone(),
-        zoom_label,
+        zoom_button: zoom_button.clone(),
         search_entry,
         status,
         print_button,
@@ -671,6 +675,15 @@ pub(crate) fn create_document_controller(
         search_receiver: Rc::new(RefCell::new(search_receiver)),
         search_generation: std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0)),
     });
+
+    for percentage in [25, 50, 75, 100, 125, 150, 200, 300, 400] {
+        let controller = Rc::downgrade(&controller);
+        append_menu_item(&zoom_menu_box, &format!("{percentage}%"), move || {
+            if let Some(controller) = controller.upgrade() {
+                controller.set_zoom(f64::from(percentage) / 100.0);
+            }
+        });
+    }
 
     let draw_controller = Rc::downgrade(&controller);
     drawing_area.set_draw_func(move |_, context, width, height| {

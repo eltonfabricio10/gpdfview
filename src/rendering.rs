@@ -54,8 +54,8 @@ pub(crate) fn request_render(
         state.request_started = None;
     }
     controller
-        .zoom_label
-        .set_text(&format!("{:.0}%", key.scale() * 100.0));
+        .zoom_button
+        .set_label(&format!("{:.0}%", key.scale() * 100.0));
 
     let cached = { controller.cache.borrow_mut().get(&key).cloned() };
     if let Some(cached) = cached {
@@ -172,6 +172,7 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
         .set_range(1.0, f64::from(page.page_count.max(1)));
     controller.set_page_spin_value(f64::from(page.page_index + 1));
     controller.page_spin.set_sensitive(page.page_count > 0);
+    controller.zoom_button.set_sensitive(page.page_count > 0);
     controller
         .previous_button
         .set_sensitive(page.page_index > 0 && page.page_count > 0);
@@ -182,8 +183,8 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
         .page_total
         .set_text(&format!("/ {}", page.page_count));
     controller
-        .zoom_label
-        .set_text(&format!("{:.0}%", controller.state.borrow().scale * 100.0));
+        .zoom_button
+        .set_label(&format!("{:.0}%", controller.state.borrow().scale * 100.0));
     controller.status.set_text(&format!(
         "Page {} of {} · {} × {} pt · rendered in {:.0} ms · cache {} MiB",
         page.page_index + 1,

@@ -92,7 +92,7 @@ pub(crate) struct ViewerController {
     pub(crate) suppress_spin_events: Rc<Cell<bool>>,
     pub(crate) page_total: gtk::Label,
     pub(crate) next_button: gtk::Button,
-    pub(crate) zoom_label: gtk::Label,
+    pub(crate) zoom_button: gtk::MenuButton,
     pub(crate) search_entry: gtk::SearchEntry,
     pub(crate) status: gtk::Label,
     pub(crate) print_button: gtk::Button,
@@ -131,6 +131,7 @@ impl ViewerController {
         self.page_spin.set_sensitive(false);
         self.previous_button.set_sensitive(false);
         self.next_button.set_sensitive(false);
+        self.zoom_button.set_sensitive(false);
         self.page_total.set_text("/ 0");
         self.status.set_text("Document closed");
         self.area.queue_draw();
@@ -177,9 +178,10 @@ impl ViewerController {
         self.page_spin.set_sensitive(false);
         self.previous_button.set_sensitive(false);
         self.next_button.set_sensitive(false);
+        self.zoom_button.set_sensitive(false);
         self.set_page_spin_value(1.0);
         self.page_total.set_text("/ …");
-        self.zoom_label.set_text("100%");
+        self.zoom_button.set_label("100%");
         self.print_button.set_sensitive(true);
         let filename = path
             .file_name()
@@ -228,6 +230,11 @@ impl ViewerController {
 
     pub(crate) fn change_zoom(&self, delta: f64) {
         change_zoom(self, delta);
+        self.notify_state_changed();
+    }
+
+    pub(crate) fn set_zoom(&self, scale: f64) {
+        crate::navigation::set_zoom(self, scale);
         self.notify_state_changed();
     }
 
