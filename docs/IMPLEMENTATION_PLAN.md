@@ -218,5 +218,6 @@ This follow-up implements the smaller UI improvements identified from `/home/elt
 | 38 | Show thumbnail render failures in the sidebar | This follow-up |
 | 39 | Distinguish empty thumbnail states from loading | This follow-up |
 | 40 | Report outline worker termination in the sidebar | This follow-up |
+| 41 | Report interrupted document properties reads | This follow-up |
 
 The runtime screenshot comparison remains open. This environment did not provide a controlled gpdfview window for capture during this pass, so `docs/UI_REFERENCE.md` records source-level findings and the exact visual checks still needed.

@@ -394,7 +394,14 @@ impl ViewerController {
                     }
                     gtk::glib::ControlFlow::Break
                 }
-                Err(mpsc::TryRecvError::Disconnected) => gtk::glib::ControlFlow::Break,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    if let Some(status) = weak_status.upgrade() {
+                        status.set_text(
+                            "A leitura das propriedades foi interrompida antes de terminar.",
+                        );
+                    }
+                    gtk::glib::ControlFlow::Break
+                }
                 Err(mpsc::TryRecvError::Empty) => gtk::glib::ControlFlow::Continue,
             }
         });
