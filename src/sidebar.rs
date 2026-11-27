@@ -177,6 +177,8 @@ fn build_page_thumbnail_button(
         Rc::new(RefCell::new(key.as_ref().and_then(|key| {
             thumbnail_surface_for_page(thumbnail_cache, key)
         })));
+    let page_label = gtk4::Label::new(Some(&format!("{}", page_index + 1)));
+    page_label.add_css_class("dim-label");
     let preview = gtk4::DrawingArea::new();
     preview.set_content_width(THUMBNAIL_FRAME_WIDTH);
     preview.set_content_height(THUMBNAIL_FRAME_HEIGHT);
@@ -228,6 +230,7 @@ fn build_page_thumbnail_button(
             let cache_for_result = thumbnail_cache.clone();
             let generation_for_worker = thumbnail_generation.clone();
             let workers_for_worker = active_thumbnail_workers.clone();
+            let label_for_result = page_label.clone();
             let (sender, receiver) = mpsc::channel();
             if thread::Builder::new()
                 .name("gpdfview-thumbnail".into())
@@ -283,22 +286,30 @@ fn build_page_thumbnail_button(
                                 if let Some(preview) = preview_weak.upgrade() {
                                     preview.queue_draw();
                                 }
+                            } else {
+                                label_for_result.set_text("Miniatura indisponível");
                             }
                             gtk4::glib::ControlFlow::Break
                         }
-                        Ok(Err(_)) | Err(mpsc::TryRecvError::Disconnected) => {
+                        Ok(Err(error)) => {
+                            label_for_result.set_text("Miniatura indisponível");
+                            label_for_result.set_tooltip_text(Some(&error));
+                            gtk4::glib::ControlFlow::Break
+                        }
+                        Err(mpsc::TryRecvError::Disconnected) => {
+                            label_for_result.set_text("Miniatura indisponível");
                             gtk4::glib::ControlFlow::Break
                         }
                         Err(mpsc::TryRecvError::Empty) => gtk4::glib::ControlFlow::Continue,
                     }
                 });
+            } else {
+                page_label.set_text("Miniatura indisponível");
             }
         }
     }
     content.append(&preview);
-
-    let label = gtk4::Label::new(Some(&format!("{}", page_index + 1)));
-    content.append(&label);
+    content.append(&page_label);
     page_button.set_child(Some(&content));
 
     if is_current {
