@@ -673,7 +673,12 @@ pub(crate) fn create_document_controller(
         let Some(draw_controller) = draw_controller.upgrade() else {
             return;
         };
-        context.set_source_rgb(0.86, 0.87, 0.90);
+        let has_document = draw_controller.state.borrow().path.is_some();
+        if has_document {
+            context.set_source_rgb(0.50, 0.50, 0.50);
+        } else {
+            context.set_source_rgb(0.16, 0.17, 0.18);
+        }
         let _ = context.paint();
 
         let state = draw_controller.state.borrow();
@@ -683,7 +688,7 @@ pub(crate) fn create_document_controller(
         if split_mode == SplitViewMode::Off && layout_mode == LayoutMode::Continuous {
             let Some(path) = state.path.clone() else {
                 drop(state);
-                context.set_source_rgb(0.82, 0.83, 0.85);
+                context.set_source_rgb(0.78, 0.79, 0.80);
                 context.select_font_face(
                     "Sans",
                     gtk4::cairo::FontSlant::Normal,
@@ -926,7 +931,7 @@ pub(crate) fn create_document_controller(
             }
         } else {
             let has_document = draw_controller.state.borrow().path.is_some();
-            context.set_source_rgb(0.82, 0.83, 0.85);
+            context.set_source_rgb(0.78, 0.79, 0.80);
             context.select_font_face(
                 "Sans",
                 gtk4::cairo::FontSlant::Normal,

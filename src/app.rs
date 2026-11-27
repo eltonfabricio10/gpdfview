@@ -825,7 +825,7 @@ pub fn run() {
         .application_id("io.github.eltonfabricio10.gpdfview")
         .build();
     app.connect_startup(|_| {
-        adw::StyleManager::default().set_color_scheme(adw::ColorScheme::Default);
+        adw::StyleManager::default().set_color_scheme(adw::ColorScheme::ForceDark);
     });
     app.set_flags(gio::ApplicationFlags::HANDLES_OPEN);
     let controller_slot = Rc::new(RefCell::new(None::<Rc<ViewerController>>));

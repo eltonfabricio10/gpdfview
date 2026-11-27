@@ -144,7 +144,7 @@ fn build_page_thumbnail_button(
     preview.set_draw_func(move |_, context, _, _| {
         let frame_width = f64::from(THUMBNAIL_FRAME_WIDTH);
         let frame_height = f64::from(THUMBNAIL_FRAME_HEIGHT);
-        context.set_source_rgb(0.95, 0.95, 0.96);
+        context.set_source_rgb(0.18, 0.19, 0.20);
         context.rectangle(0.0, 0.0, frame_width, frame_height);
         let _ = context.fill();
 
