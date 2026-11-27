@@ -16,7 +16,9 @@ use crate::session::{
     last_directory_for_home, last_window_geometry_for_home, newest_valid_recent_document,
     normalize_recent_paths, remember_last_directory_for_home, remember_window_geometry_for_home,
 };
-use crate::session::{load_app_settings, load_document_view, remember_recent_document};
+use crate::session::{
+    load_app_settings, load_document_view, remember_last_document, remember_recent_document,
+};
 use crate::viewer_state::{RenderKey, ViewerState, DEFAULT_ZOOM};
 use crate::window::DocumentControllerParams;
 use adw::prelude::*;
@@ -259,6 +261,7 @@ impl ViewerController {
     }
 
     pub(crate) fn open_document(&self, path: PathBuf) {
+        remember_last_document(&path);
         self.search_generation
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         remember_recent_document(&path);

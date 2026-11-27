@@ -192,6 +192,38 @@ fn resume_last_document_file_for_home(home: &Path) -> PathBuf {
     session_storage_dir_for(home).join("resume_last_document.txt")
 }
 
+fn last_document_file_for_home(home: &Path) -> PathBuf {
+    session_storage_dir_for(home).join("last_document.txt")
+}
+
+pub fn remember_last_document_for_home(home: &Path, path: &Path) {
+    let trimmed = path.to_string_lossy().trim().to_string();
+    if trimmed.is_empty() {
+        return;
+    }
+    persist_session_file(&last_document_file_for_home(home), trimmed.as_bytes());
+}
+
+pub fn remember_last_document(path: &Path) {
+    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    remember_last_document_for_home(Path::new(&home), path);
+}
+
+pub fn last_opened_document_for_home(home: &Path) -> Option<PathBuf> {
+    let content = fs::read_to_string(last_document_file_for_home(home)).ok()?;
+    let path = PathBuf::from(content.trim());
+    (path.is_file()
+        && path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf")))
+    .then_some(path)
+}
+
+pub fn last_opened_document() -> Option<PathBuf> {
+    let home = env::var("HOME").unwrap_or_else(|_| ".".to_string());
+    last_opened_document_for_home(Path::new(&home))
+}
+
 pub fn remember_resume_last_document_for_home(home: &Path, should_resume: bool) {
     let value = if should_resume { "1" } else { "0" };
     persist_session_file(&resume_last_document_file_for_home(home), value.as_bytes());
@@ -726,6 +758,29 @@ mod tests {
             Some("Ctrl+O")
         );
 
+        let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn last_document_roundtrip_rejects_missing_files() {
+        let base = std::env::temp_dir().join(format!(
+            "gpdfview-last-document-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch available")
+                .as_nanos()
+        ));
+        let home = base.join("home");
+        let document = home.join("last.pdf");
+        let _ = fs::create_dir_all(document.parent().expect("document parent"));
+        fs::write(&document, b"pdf").expect("create last document");
+
+        remember_last_document_for_home(&home, &document);
+        assert_eq!(last_opened_document_for_home(&home), Some(document.clone()));
+
+        fs::remove_file(&document).expect("remove last document");
+        assert_eq!(last_opened_document_for_home(&home), None);
         let _ = fs::remove_dir_all(&base);
     }
 

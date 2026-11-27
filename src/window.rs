@@ -236,7 +236,9 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     }
 
     if should_resume_last_document() {
-        if let Some(path) = newest_valid_recent_document(&load_recent_documents()) {
+        let restore_path = crate::session::last_opened_document()
+            .or_else(|| newest_valid_recent_document(&load_recent_documents()));
+        if let Some(path) = restore_path {
             let title_text = path
                 .file_name()
                 .and_then(|name| name.to_str())
