@@ -248,9 +248,21 @@ pub fn should_resume_last_document() -> bool {
 }
 
 pub fn remember_window_geometry_for_home(home: &Path, width: i32, height: i32) {
+    let (width, height) = normalize_window_geometry(width, height);
     let storage = session_storage_dir_for(home);
     let file = storage.join("window_size.txt");
     persist_session_file(&file, format!("{width} {height}").as_bytes());
+}
+
+pub(crate) fn normalize_window_geometry(width: i32, height: i32) -> (i32, i32) {
+    const MIN_WIDTH: i32 = 800;
+    const MIN_HEIGHT: i32 = 480;
+    const MAX_WIDTH: i32 = 16_384;
+    const MAX_HEIGHT: i32 = 16_384;
+    (
+        width.clamp(MIN_WIDTH, MAX_WIDTH),
+        height.clamp(MIN_HEIGHT, MAX_HEIGHT),
+    )
 }
 
 fn window_state_file_for_home(home: &Path) -> PathBuf {
@@ -283,7 +295,7 @@ pub fn last_window_geometry_for_home(home: &Path) -> Option<(i32, i32)> {
     let mut parts = content.split_whitespace();
     let width = parts.next()?.parse::<i32>().ok()?;
     let height = parts.next()?.parse::<i32>().ok()?;
-    Some((width, height))
+    Some(normalize_window_geometry(width, height))
 }
 
 pub fn last_window_state_for_home(home: &Path) -> Option<(bool, bool)> {
@@ -673,6 +685,13 @@ pub fn load_document_view(path: &Path) -> Option<PersistedDocumentView> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn window_geometry_is_sanitized_before_persistence() {
+        assert_eq!(normalize_window_geometry(320, 319), (800, 480));
+        assert_eq!(normalize_window_geometry(20_000, 20_000), (16_384, 16_384));
+        assert_eq!(normalize_window_geometry(1080, 760), (1080, 760));
+    }
 
     #[test]
     fn remembers_and_loads_per_document_view() {
