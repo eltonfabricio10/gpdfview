@@ -38,6 +38,13 @@ pub(crate) fn request_render(
         };
         (page_index, scale, rotation)
     };
+    let page_count = controller.state.borrow().page_count;
+    controller
+        .previous_button
+        .set_sensitive(page_count > 0 && page_index > 0);
+    controller
+        .next_button
+        .set_sensitive(page_count > 0 && page_index + 1 < page_count);
 
     let key = crate::viewer_state::RenderKey::new(path.clone(), page_index, scale, rotation);
     let generation = controller.renderer.invalidate();
@@ -165,6 +172,12 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
         .set_range(1.0, f64::from(page.page_count.max(1)));
     controller.set_page_spin_value(f64::from(page.page_index + 1));
     controller.page_spin.set_sensitive(page.page_count > 0);
+    controller
+        .previous_button
+        .set_sensitive(page.page_index > 0 && page.page_count > 0);
+    controller
+        .next_button
+        .set_sensitive(page.page_index + 1 < page.page_count && page.page_count > 0);
     controller
         .page_total
         .set_text(&format!("/ {}", page.page_count));

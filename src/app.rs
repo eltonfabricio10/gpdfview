@@ -87,9 +87,11 @@ pub(crate) struct ViewerController {
     pub(crate) surface: Rc<RefCell<Option<ImageSurface>>>,
     pub(crate) area: gtk::DrawingArea,
     pub(crate) scrolled: gtk::ScrolledWindow,
+    pub(crate) previous_button: gtk::Button,
     pub(crate) page_spin: gtk::SpinButton,
     pub(crate) suppress_spin_events: Rc<Cell<bool>>,
     pub(crate) page_total: gtk::Label,
+    pub(crate) next_button: gtk::Button,
     pub(crate) zoom_label: gtk::Label,
     pub(crate) search_entry: gtk::SearchEntry,
     pub(crate) status: gtk::Label,
@@ -127,6 +129,8 @@ impl ViewerController {
         state.pending_search_rect = None;
         drop(state);
         self.page_spin.set_sensitive(false);
+        self.previous_button.set_sensitive(false);
+        self.next_button.set_sensitive(false);
         self.page_total.set_text("/ 0");
         self.status.set_text("Document closed");
         self.area.queue_draw();
@@ -171,6 +175,8 @@ impl ViewerController {
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         remember_recent_document(&path);
         self.page_spin.set_sensitive(false);
+        self.previous_button.set_sensitive(false);
+        self.next_button.set_sensitive(false);
         self.set_page_spin_value(1.0);
         self.page_total.set_text("/ …");
         self.zoom_label.set_text("100%");

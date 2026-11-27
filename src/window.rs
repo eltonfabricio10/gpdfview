@@ -573,11 +573,13 @@ pub(crate) fn create_document_controller(
     toolbar.set_margin_end(8);
 
     let previous_button = action_button("go-previous-symbolic", "Previous page");
+    previous_button.set_sensitive(false);
     let page_spin = gtk::SpinButton::with_range(1.0, 1.0, 1.0);
     page_spin.set_sensitive(false);
     page_spin.set_width_chars(5);
     let page_total = gtk::Label::new(Some("/ 0"));
     let next_button = action_button("go-next-symbolic", "Next page");
+    next_button.set_sensitive(false);
     let search_entry = gtk::SearchEntry::new();
     search_entry.set_placeholder_text(Some("Search in document"));
     search_entry.set_hexpand(true);
@@ -650,9 +652,11 @@ pub(crate) fn create_document_controller(
         surface: current_surface,
         area: drawing_area.clone(),
         scrolled,
+        previous_button: previous_button.clone(),
         page_spin,
         suppress_spin_events: Rc::new(Cell::new(false)),
         page_total,
+        next_button: next_button.clone(),
         zoom_label,
         search_entry,
         status,
