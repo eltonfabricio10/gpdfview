@@ -422,24 +422,47 @@ fn populate_outline_result(
 ) {
     match result {
         Ok(entries) if entries.is_empty() => {
-            append_outline_message(list, "This document has no outline/bookmarks.");
+            append_outline_message(list, "Este PDF não tem um contorno navegável.");
         }
         Ok(entries) => {
+            let current_page = controller.state.borrow().page_index;
+            let manager = controller.tab_manager.clone();
             for entry in entries {
                 let row = gtk4::ListBoxRow::new();
                 let button = gtk4::Button::new();
                 button.set_halign(gtk4::Align::Fill);
                 button.set_hexpand(true);
-                let indent = "  ".repeat(entry.depth as usize);
-                button.set_label(&format!("{}{}", indent, entry.title));
+                let row_box = gtk4::Box::new(gtk4::Orientation::Horizontal, 6);
+                row_box.set_margin_start(8);
+                row_box.set_margin_end(8);
+                row_box.set_margin_top(4);
+                row_box.set_margin_bottom(4);
+                let title = gtk4::Label::new(Some(&entry.title));
+                title.set_xalign(0.0);
+                title.set_hexpand(true);
+                title.set_ellipsize(gtk4::pango::EllipsizeMode::End);
+                title.set_margin_start((entry.depth.min(8) * 12) as i32);
+                row_box.append(&title);
+                let page = gtk4::Label::new(Some(&format!("{}", entry.page_index + 1)));
+                page.set_xalign(1.0);
+                row_box.append(&page);
+                button.set_child(Some(&row_box));
                 button.set_tooltip_text(Some(&format!("Go to page {}", entry.page_index + 1)));
                 let page_index = entry.page_index;
-                let outline_controller = controller.clone();
+                let outline_manager = manager.clone();
                 button.connect_clicked(move |_| {
-                    outline_controller.navigate_to(page_index);
+                    if let Some(controller) = outline_manager
+                        .upgrade()
+                        .and_then(|manager| manager.borrow().active_controller())
+                    {
+                        controller.navigate_to(page_index);
+                    }
                 });
                 row.set_child(Some(&button));
                 list.append(&row);
+                if entry.page_index == current_page {
+                    list.select_row(Some(&row));
+                }
             }
         }
         Err(error) => {
@@ -713,7 +736,7 @@ pub fn build_sidebar(
     outline_header.append(&refresh_outline);
 
     let outline_list = gtk4::ListBox::new();
-    outline_list.set_selection_mode(gtk4::SelectionMode::None);
+    outline_list.set_selection_mode(gtk4::SelectionMode::Single);
     outline_list.set_css_classes(&["boxed-list"]);
     let outline_generation = Arc::new(AtomicU64::new(0));
     populate_outline_list(
