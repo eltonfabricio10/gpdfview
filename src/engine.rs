@@ -5,7 +5,7 @@ use gtk4::glib::translate::ToGlibPtr;
 use poppler::{Document, Page};
 use std::collections::VecDeque;
 use std::ffi::CStr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Condvar, Mutex};
 use std::thread;
@@ -13,6 +13,7 @@ use std::thread;
 const RENDER_SCALE_LIMIT: f64 = 4.0;
 const PAGE_MEMORY_LIMIT_BYTES: usize = 128 * 1024 * 1024;
 const MAX_PENDING_PREFETCHES: usize = 4;
+const MAX_PDF_FILE_BYTES: u64 = 512 * 1024 * 1024;
 
 #[derive(Clone, Debug)]
 pub struct RenderRequest {
@@ -544,9 +545,38 @@ fn drop_document(document: &mut Option<Document>) {
 }
 
 fn load_document(path: &PathBuf) -> Result<Document, String> {
+    validate_pdf_path(path)?;
     let _guard = crate::poppler_lock::lock()?;
     let file = gio::File::for_path(path);
     Document::from_file(&file.uri(), None).map_err(|error| error.to_string())
+}
+
+pub(crate) fn validate_pdf_path(path: &Path) -> Result<(), String> {
+    if !path.is_file() {
+        return Err(format!(
+            "{} não é um arquivo PDF local legível.",
+            path.display()
+        ));
+    }
+    if !path
+        .extension()
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("pdf"))
+    {
+        return Err("O arquivo selecionado não tem extensão PDF.".to_string());
+    }
+    let metadata = path
+        .metadata()
+        .map_err(|error| format!("Não foi possível consultar o PDF: {error}"))?;
+    if metadata.len() == 0 {
+        return Err("O arquivo PDF está vazio.".to_string());
+    }
+    if metadata.len() > MAX_PDF_FILE_BYTES {
+        return Err(format!(
+            "O PDF excede o limite operacional de {} MiB.",
+            MAX_PDF_FILE_BYTES / (1024 * 1024)
+        ));
+    }
+    Ok(())
 }
 
 pub fn document_properties(path: &PathBuf) -> Result<Vec<(String, String)>, String> {
@@ -1021,6 +1051,31 @@ mod tests {
         drop(state);
 
         assert!(queued <= super::MAX_PENDING_PREFETCHES);
+    }
+
+    #[test]
+    fn rejects_empty_missing_and_non_pdf_paths_before_poppler() {
+        let base = std::env::temp_dir().join(format!(
+            "gpdfview-path-validation-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .expect("unix epoch available")
+                .as_nanos()
+        ));
+        fs::create_dir_all(&base).expect("create validation directory");
+        let missing = base.join("missing.pdf");
+        let empty = base.join("empty.pdf");
+        let text = base.join("notes.txt");
+        fs::write(&empty, b"").expect("create empty PDF");
+        fs::write(&text, b"not a PDF").expect("create text file");
+
+        assert!(super::validate_pdf_path(&missing).is_err());
+        assert!(super::validate_pdf_path(&empty).is_err());
+        assert!(super::validate_pdf_path(&text).is_err());
+        assert!(super::validate_pdf_path(&base).is_err());
+
+        let _ = fs::remove_dir_all(&base);
     }
 
     #[test]

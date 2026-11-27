@@ -242,6 +242,7 @@ fn render_for_printing(
 ) -> Result<(), String> {
     let options = options.normalized();
 
+    crate::engine::validate_pdf_path(source)?;
     let _guard = crate::poppler_lock::lock()?;
     let file = gio::File::for_path(source);
     let document = Document::from_file(&file.uri(), None).map_err(|error| error.to_string())?;
