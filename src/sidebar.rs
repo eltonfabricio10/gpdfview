@@ -365,8 +365,12 @@ fn populate_pages_flow(
         window_state.start.set(start);
         start
     };
-    previous_window_button.set_sensitive(start > 0);
-    next_window_button.set_sensitive(start + THUMBNAIL_WINDOW_SIZE < page_count);
+    let has_previous_window = start > 0;
+    let has_next_window = start + THUMBNAIL_WINDOW_SIZE < page_count;
+    previous_window_button.set_visible(has_previous_window);
+    previous_window_button.set_sensitive(has_previous_window);
+    next_window_button.set_visible(has_next_window);
+    next_window_button.set_sensitive(has_next_window);
     let visible_pages =
         (start..(start + THUMBNAIL_WINDOW_SIZE).min(page_count)).collect::<Vec<_>>();
     if visible_pages.is_empty() {
