@@ -1365,6 +1365,7 @@ pub(crate) fn create_document_controller(
         if target_page != spin_controller.state.borrow().page_index {
             spin_controller.navigate_to(target_page);
         }
+        spin_controller.notify_state_changed();
     });
     let zoom_out_controller = Rc::downgrade(&controller);
     zoom_out.connect_clicked(move |_| {

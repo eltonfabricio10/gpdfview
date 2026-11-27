@@ -86,13 +86,9 @@ fn page_range_for_sidebar(page_count: i32, current_page: i32) -> Vec<i32> {
         return Vec::new();
     }
 
-    if page_count <= THUMBNAIL_WINDOW_SIZE {
-        return (0..page_count).collect();
-    }
-
-    let start = (current_page - THUMBNAIL_WINDOW_SIZE / 2).max(0);
-    let end = (start + THUMBNAIL_WINDOW_SIZE - 1).min(page_count - 1);
-    (start..=end).collect()
+    let start = current_page.clamp(0, page_count - 1);
+    let end = (start + THUMBNAIL_WINDOW_SIZE).min(page_count);
+    (start..end).collect()
 }
 
 fn append_sidebar_entry(
@@ -353,13 +349,9 @@ fn populate_pages_flow(
 
     let start = {
         let mut window = window_state.path.borrow_mut();
-        let first_page = window_state.start.get();
-        let window_end = first_page + THUMBNAIL_WINDOW_SIZE;
         let path_changed = *window != path;
         let page_changed = window_state.current_page.replace(current_page) != current_page;
-        if path_changed
-            || (page_changed && (current_page < first_page || current_page >= window_end))
-        {
+        if path_changed || page_changed {
             *window = path.clone();
             window_state.start.set(
                 page_range_for_sidebar(page_count, current_page)
@@ -368,7 +360,7 @@ fn populate_pages_flow(
                     .unwrap_or(0),
             );
         }
-        let max_start = (page_count - THUMBNAIL_WINDOW_SIZE).max(0);
+        let max_start = (page_count - 1).max(0);
         let start = window_state.start.get().clamp(0, max_start);
         window_state.start.set(start);
         start
@@ -421,7 +413,7 @@ fn shift_thumbnail_window(
     next_window_button: &gtk4::Button,
 ) {
     let page_count = controller.state.borrow().page_count;
-    let max_start = (page_count - THUMBNAIL_WINDOW_SIZE).max(0);
+    let max_start = (page_count - 1).max(0);
     let start = (window_state.start.get() + direction * THUMBNAIL_WINDOW_SIZE).clamp(0, max_start);
     window_state.start.set(start);
     populate_pages_flow(
@@ -1213,12 +1205,9 @@ mod tests {
     use super::page_range_for_sidebar;
 
     #[test]
-    fn page_range_for_sidebar_tracks_a_centered_window() {
-        assert_eq!(
-            page_range_for_sidebar(12, 5),
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9]
-        );
+    fn page_range_for_sidebar_starts_with_the_requested_page() {
+        assert_eq!(page_range_for_sidebar(12, 5), vec![5, 6, 7, 8, 9, 10, 11]);
         assert_eq!(page_range_for_sidebar(5, 0), vec![0, 1, 2, 3, 4]);
-        assert_eq!(page_range_for_sidebar(3, 2), vec![0, 1, 2]);
+        assert_eq!(page_range_for_sidebar(3, 2), vec![2]);
     }
 }
