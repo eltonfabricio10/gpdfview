@@ -50,7 +50,9 @@ fn normalized_shortcut(value: &str) -> Option<String> {
             "ctrl" | "control" => "ctrl",
             "alt" => "alt",
             "shift" => "shift",
-            "meta" | "super" | "cmd" => "meta",
+            "meta" | "cmd" => "meta",
+            "super" => "super",
+            "hyper" => "hyper",
             _ => return None,
         };
         if modifiers.contains(&canonical) {

@@ -49,7 +49,7 @@
 | Persist page, zoom, rotation and layout per document | IMPLEMENTADO | `src/session.rs`, `src/app.rs` | Atomic writes, versioned storage and file identity/invalidation |
 | Restore every previously open tab/session | PARCIAL | `src/session.rs`, `src/app.rs` | Current startup restore is centered on the last document, not a full multi-tab session |
 | Settings for default layout, split sync and zoom step | IMPLEMENTADO | `src/session.rs`, `src/dialogs.rs`, `src/navigation.rs` | Zoom values are clamped to 0.05–1.0; non-finite persisted values fall back safely and invalid UI input is rejected; schema versioning remains |
-| Configurable keyboard shortcuts | PARCIAL | `src/keyboard.rs`, `src/dialogs.rs`, `src/session.rs`, `src/window.rs`, `src/app.rs` | All 12 mapped actions have editable fields; empty, invalid and duplicate combinations are rejected; matching requires the exact modifier set, and changed shortcuts suppress their former primary binding; menu hints refresh when settings are saved. Runtime behavior still needs GUI verification |
+| Configurable keyboard shortcuts | PARCIAL | `src/keyboard.rs`, `src/dialogs.rs`, `src/session.rs`, `src/window.rs`, `src/app.rs` | All 12 mapped actions have editable fields; empty, invalid and duplicate combinations are rejected; matching distinguishes Ctrl/Alt/Shift/Meta/Super/Hyper and requires the exact modifier set; changed shortcuts suppress their former primary binding; menu hints refresh when settings are saved. Runtime behavior still needs GUI verification |
 | Configurable toolbars | AUSENTE | No equivalent model/UI found | Add action model and persistence if desired |
 
 ## Printing and document formats

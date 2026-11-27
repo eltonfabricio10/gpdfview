@@ -51,14 +51,18 @@ fn shortcut_matches(value: &str, key: &str, modifiers: u32) -> bool {
     let modifier_mask = gtk::gdk::ModifierType::CONTROL_MASK.bits()
         | gtk::gdk::ModifierType::ALT_MASK.bits()
         | gtk::gdk::ModifierType::SHIFT_MASK.bits()
-        | gtk::gdk::ModifierType::META_MASK.bits();
+        | gtk::gdk::ModifierType::META_MASK.bits()
+        | gtk::gdk::ModifierType::SUPER_MASK.bits()
+        | gtk::gdk::ModifierType::HYPER_MASK.bits();
     let mut expected_modifiers = 0;
     for fragment in &fragments[..fragments.len() - 1] {
         let modifier = match normalize_shortcut_fragment(fragment).as_str() {
             "ctrl" | "control" => gtk::gdk::ModifierType::CONTROL_MASK.bits(),
             "alt" => gtk::gdk::ModifierType::ALT_MASK.bits(),
             "shift" => gtk::gdk::ModifierType::SHIFT_MASK.bits(),
-            "meta" | "super" | "cmd" => gtk::gdk::ModifierType::META_MASK.bits(),
+            "meta" | "cmd" => gtk::gdk::ModifierType::META_MASK.bits(),
+            "super" => gtk::gdk::ModifierType::SUPER_MASK.bits(),
+            "hyper" => gtk::gdk::ModifierType::HYPER_MASK.bits(),
             _ => return false,
         };
         if expected_modifiers & modifier != 0 {
@@ -77,7 +81,9 @@ pub(crate) fn resolve_key_action(key: &str, modifiers: u32) -> Option<KeyAction>
     let modifier_mask = ctrl
         | gtk::gdk::ModifierType::ALT_MASK.bits()
         | gtk::gdk::ModifierType::SHIFT_MASK.bits()
-        | gtk::gdk::ModifierType::META_MASK.bits();
+        | gtk::gdk::ModifierType::META_MASK.bits()
+        | gtk::gdk::ModifierType::SUPER_MASK.bits()
+        | gtk::gdk::ModifierType::HYPER_MASK.bits();
     let has_only_ctrl = modifiers & modifier_mask == ctrl;
     let has_no_modifiers = modifiers & modifier_mask == 0;
 
