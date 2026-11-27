@@ -263,6 +263,7 @@ pub struct DocumentTextMatch {
 pub fn find_text_rectangles_in_document_cancellable<F>(
     path: &PathBuf,
     query: &str,
+    options: poppler::FindFlags,
     is_cancelled: F,
 ) -> Result<Vec<DocumentTextMatch>, String>
 where
@@ -284,7 +285,7 @@ where
         let Some(page) = document.page(page_index) else {
             continue;
         };
-        for rect in page.find_text(trimmed) {
+        for rect in page.find_text_with_options(trimmed, options) {
             matches.push(DocumentTextMatch {
                 page_index,
                 rect: (rect.x1(), rect.y1(), rect.x2(), rect.y2()),

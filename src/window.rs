@@ -318,6 +318,10 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         active_controller(&last_page_manager, &last_page_fallback)
             .handle_key_action(KeyAction::LastPage);
     });
+    first_page_item.set_sensitive(false);
+    last_page_item.set_sensitive(false);
+    edit_next_match_item.set_sensitive(false);
+    edit_prev_match_item.set_sensitive(false);
     let history_back_manager = tab_manager.clone();
     let history_back_fallback = initial.clone();
     let history_back_item = append_menu_item(&edit_menu_box, "Voltar para página", move || {
@@ -494,8 +498,6 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
     let doc_sensitive_items = Rc::new(vec![
         file_print_item,
         file_properties_item,
-        edit_next_match_item,
-        edit_prev_match_item,
         history_back_item.clone(),
         history_forward_item.clone(),
         view_presentation_item,
@@ -512,6 +514,8 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
         Rc::new(RefCell::new(std::collections::HashSet::<usize>::new()));
     let weak_history_back = history_back_item.downgrade();
     let weak_history_forward = history_forward_item.downgrade();
+    let weak_edit_next_match = edit_next_match_item.downgrade();
+    let weak_edit_prev_match = edit_prev_match_item.downgrade();
     let weak_first_page = first_page_item.downgrade();
     let weak_last_page = last_page_item.downgrade();
     tab_manager
@@ -540,6 +544,8 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
                 let forward_item = weak_history_forward.clone();
                 let first_item = weak_first_page.clone();
                 let last_item = weak_last_page.clone();
+                let next_match_item = weak_edit_next_match.clone();
+                let prev_match_item = weak_edit_prev_match.clone();
                 controller.subscribe_state_changes(move || {
                     let Some(state) = state.upgrade() else {
                         return;
@@ -557,6 +563,13 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
                     if let Some(item) = last_item.upgrade() {
                         item.set_sensitive(state.path.is_some() && state.page_count > 0);
                     }
+                    let has_matches = !state.search_results.is_empty();
+                    if let Some(item) = next_match_item.upgrade() {
+                        item.set_sensitive(has_matches);
+                    }
+                    if let Some(item) = prev_match_item.upgrade() {
+                        item.set_sensitive(has_matches);
+                    }
                 });
             }
             let state = controller.state.borrow();
@@ -572,6 +585,13 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
             }
             if let Some(item) = weak_last_page.upgrade() {
                 item.set_sensitive(has_pages);
+            }
+            let has_matches = !state.search_results.is_empty();
+            if let Some(item) = weak_edit_next_match.upgrade() {
+                item.set_sensitive(has_matches);
+            }
+            if let Some(item) = weak_edit_prev_match.upgrade() {
+                item.set_sensitive(has_matches);
             }
         });
 
@@ -676,11 +696,20 @@ pub(crate) fn create_document_controller(
     next_button.set_sensitive(false);
     let search_open_button = action_button("system-search-symbolic", "Show document search");
     let search_entry = gtk::SearchEntry::new();
-    search_entry.set_placeholder_text(Some("Search in document"));
+    search_entry.set_placeholder_text(Some("Buscar no documento"));
     search_entry.set_hexpand(true);
-    let search_button = action_button("system-search-symbolic", "Search in this document");
+    let search_button = action_button("system-search-symbolic", "Search the entire document");
     let prev_match = action_button("go-up-symbolic", "Previous match");
     let next_match = action_button("go-down-symbolic", "Next match");
+    let search_case_sensitive =
+        gtk::CheckButton::with_label("Diferenciar maiúsculas de minúsculas");
+    search_case_sensitive.set_tooltip_text(Some("Diferenciar maiúsculas de minúsculas"));
+    let search_whole_words = gtk::CheckButton::with_label("Palavras inteiras");
+    let search_highlight_all = gtk::CheckButton::with_label("Destacar tudo");
+    search_whole_words.set_tooltip_text(Some("Encontrar somente palavras inteiras"));
+    search_highlight_all.set_tooltip_text(Some("Destacar todas as ocorrências na página"));
+    prev_match.set_sensitive(false);
+    next_match.set_sensitive(false);
     let zoom_out = action_button("zoom-out-symbolic", "Zoom out");
     let (zoom_button, zoom_menu_box) = create_menu_button("100%");
     zoom_button.set_has_frame(true);
@@ -704,6 +733,9 @@ pub(crate) fn create_document_controller(
     search_bar.set_margin_bottom(4);
     search_bar.append(&search_entry);
     search_bar.append(&search_button);
+    search_bar.append(&search_case_sensitive);
+    search_bar.append(&search_whole_words);
+    search_bar.append(&search_highlight_all);
     search_bar.append(&prev_match);
     search_bar.append(&next_match);
     search_bar.append(&close_search_button);
@@ -768,6 +800,11 @@ pub(crate) fn create_document_controller(
         next_button: next_button.clone(),
         zoom_button: zoom_button.clone(),
         search_entry,
+        search_case_sensitive: search_case_sensitive.clone(),
+        search_whole_words: search_whole_words.clone(),
+        search_highlight_all: search_highlight_all.clone(),
+        search_previous_button: prev_match.clone(),
+        search_next_button: next_match.clone(),
         search_host: search_host.clone(),
         search_bar: search_bar.clone(),
         status,
@@ -1217,6 +1254,29 @@ pub(crate) fn create_document_controller(
     search_button.connect_clicked(move |_| {
         if let Some(search_controller) = search_controller.upgrade() {
             search_controller.search_current_page();
+        }
+    });
+    let case_search_controller = Rc::downgrade(&controller);
+    search_case_sensitive.connect_toggled(move |_| {
+        if let Some(controller) = case_search_controller.upgrade() {
+            if !controller.search_entry.text().trim().is_empty() {
+                controller.search_current_page();
+            }
+        }
+    });
+    let whole_word_controller = Rc::downgrade(&controller);
+    search_whole_words.connect_toggled(move |_| {
+        if let Some(controller) = whole_word_controller.upgrade() {
+            if !controller.search_entry.text().trim().is_empty() {
+                controller.search_current_page();
+            }
+        }
+    });
+    let highlight_all_controller = Rc::downgrade(&controller);
+    search_highlight_all.connect_toggled(move |button| {
+        if let Some(controller) = highlight_all_controller.upgrade() {
+            controller.state.borrow_mut().search_highlight_all = button.is_active();
+            controller.refresh_search_highlights();
         }
     });
     let open_search_controller = Rc::downgrade(&controller);

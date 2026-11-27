@@ -94,6 +94,11 @@ pub(crate) struct ViewerController {
     pub(crate) next_button: gtk::Button,
     pub(crate) zoom_button: gtk::MenuButton,
     pub(crate) search_entry: gtk::SearchEntry,
+    pub(crate) search_case_sensitive: gtk::CheckButton,
+    pub(crate) search_whole_words: gtk::CheckButton,
+    pub(crate) search_highlight_all: gtk::CheckButton,
+    pub(crate) search_previous_button: gtk::Button,
+    pub(crate) search_next_button: gtk::Button,
     pub(crate) status: gtk::Label,
     pub(crate) print_button: gtk::Button,
     pub(crate) title: gtk::Label,
@@ -130,6 +135,8 @@ impl ViewerController {
         state.search_query.clear();
         state.search_results.clear();
         state.search_highlights.clear();
+        self.search_previous_button.set_sensitive(false);
+        self.search_next_button.set_sensitive(false);
         state.pending_search_rect = None;
         drop(state);
         self.page_spin.set_sensitive(false);
@@ -169,6 +176,17 @@ impl ViewerController {
     pub(crate) fn hide_search(&self) {
         self.search_bar.set_visible(false);
         self.search_host.set_visible(false);
+    }
+
+    pub(crate) fn refresh_search_highlights(&self) {
+        let index = {
+            let state = self.state.borrow();
+            if state.search_results.is_empty() {
+                return;
+            }
+            state.search_global_index
+        };
+        self.focus_global_search_result(index);
     }
 
     pub(crate) fn go_page_back(&self) {
@@ -234,6 +252,8 @@ impl ViewerController {
             state.search_results.clear();
             state.search_global_index = 0;
             state.search_highlights.clear();
+            self.search_previous_button.set_sensitive(false);
+            self.search_next_button.set_sensitive(false);
             state.search_index = 0;
             state.pending_search_rect = None;
             if let Some(saved) = load_document_view(&path) {
@@ -373,10 +393,15 @@ impl ViewerController {
                 .filter(|entry| entry.page_index == selected.page_index)
                 .map(|entry| entry.rect)
                 .collect::<Vec<_>>();
-            let page_match_index = page_highlights
-                .iter()
-                .position(|rect| *rect == selected.rect)
-                .unwrap_or(0);
+            let (page_highlights, page_match_index) = if state.search_highlight_all {
+                let selected_index = page_highlights
+                    .iter()
+                    .position(|rect| *rect == selected.rect)
+                    .unwrap_or(0);
+                (page_highlights, selected_index)
+            } else {
+                (vec![selected.rect], 0)
+            };
             (
                 selected.page_index,
                 selected.rect,

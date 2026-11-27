@@ -96,6 +96,7 @@ pub struct ViewerState {
     pub split_secondary_page_index: i32,
     pub split_sync: bool,
     pub search_query: String,
+    pub search_highlight_all: bool,
     pub search_results: Vec<SearchOccurrence>,
     pub search_global_index: usize,
     pub search_highlights: Vec<(f64, f64, f64, f64)>,

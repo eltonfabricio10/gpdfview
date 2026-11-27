@@ -289,23 +289,46 @@ pub(crate) fn search_current_page(controller: &ViewerController) {
     };
     let query = controller.search_entry.text().trim().to_string();
     if query.is_empty() {
+        drop(state);
+        let mut state = controller.state.borrow_mut();
+        state.search_query.clear();
+        state.search_results.clear();
+        state.search_global_index = 0;
+        state.search_highlights.clear();
+        state.pending_search_rect = None;
+        drop(state);
+        controller.search_generation.fetch_add(1, Ordering::Relaxed);
+        controller.search_previous_button.set_sensitive(false);
+        controller.search_next_button.set_sensitive(false);
+        controller.area.queue_draw();
         controller
             .status
             .set_text("Type a word or phrase to search in the PDF.");
+        controller.notify_state_changed();
         return;
     }
     let page_index = state.page_index;
     drop(state);
+    let mut options = poppler::FindFlags::empty();
+    if controller.search_case_sensitive.is_active() {
+        options |= poppler::FindFlags::CASE_SENSITIVE;
+    }
+    if controller.search_whole_words.is_active() {
+        options |= poppler::FindFlags::WHOLE_WORDS_ONLY;
+    }
 
     {
         let mut state = controller.state.borrow_mut();
         state.search_query = query.clone();
+        state.search_highlight_all = controller.search_highlight_all.is_active();
         state.search_results.clear();
         state.search_global_index = 0;
         state.search_highlights.clear();
         state.search_index = 0;
         state.pending_search_rect = None;
     }
+    controller.search_previous_button.set_sensitive(false);
+    controller.search_next_button.set_sensitive(false);
     controller.status.set_text("Searching document…");
     controller.area.queue_draw();
 
@@ -314,10 +337,12 @@ pub(crate) fn search_current_page(controller: &ViewerController) {
     if let Err(error) = thread::Builder::new()
         .name("gpdfview-search".into())
         .spawn(move || {
-            let result =
-                crate::engine::find_text_rectangles_in_document_cancellable(&path, &query, || {
-                    cancellation_generation.load(Ordering::Relaxed) != generation
-                });
+            let result = crate::engine::find_text_rectangles_in_document_cancellable(
+                &path,
+                &query,
+                options,
+                || cancellation_generation.load(Ordering::Relaxed) != generation,
+            );
             let _ = sender.send(crate::app::SearchResponse {
                 generation,
                 path,
@@ -359,6 +384,8 @@ fn complete_document_search(controller: &ViewerController, response: crate::app:
                 state.pending_search_rect = None;
             }
             let total = controller.state.borrow().search_results.len();
+            controller.search_previous_button.set_sensitive(total > 0);
+            controller.search_next_button.set_sensitive(total > 0);
             if total == 0 {
                 controller.status.set_text(&format!(
                     "No matches found for \"{}\" in this document.",
@@ -376,6 +403,8 @@ fn complete_document_search(controller: &ViewerController, response: crate::app:
             state.search_highlights.clear();
             state.search_query.clear();
             state.pending_search_rect = None;
+            controller.search_previous_button.set_sensitive(false);
+            controller.search_next_button.set_sensitive(false);
             controller.area.queue_draw();
             controller
                 .status
