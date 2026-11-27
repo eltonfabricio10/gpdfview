@@ -260,14 +260,6 @@ pub struct DocumentTextMatch {
     pub rect: (f64, f64, f64, f64),
 }
 
-#[cfg(test)]
-pub fn find_text_rectangles_in_document(
-    path: &PathBuf,
-    query: &str,
-) -> Result<Vec<DocumentTextMatch>, String> {
-    find_text_rectangles_in_document_cancellable(path, query, || false)
-}
-
 pub fn find_text_rectangles_in_document_cancellable<F>(
     path: &PathBuf,
     query: &str,

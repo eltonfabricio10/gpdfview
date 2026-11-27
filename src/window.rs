@@ -121,11 +121,12 @@ pub(crate) fn build_ui(app: &adw::Application) -> Option<Rc<ViewerController>> {
 
     let shell = gtk::Box::new(gtk::Orientation::Vertical, 0);
 
-    let menu_bar = gtk::Box::new(gtk::Orientation::Horizontal, 2);
-    menu_bar.set_margin_start(8);
-    menu_bar.set_margin_end(8);
-    menu_bar.set_margin_top(4);
-    menu_bar.set_margin_bottom(4);
+    let menu_bar = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    menu_bar.set_hexpand(true);
+    menu_bar.set_margin_start(4);
+    menu_bar.set_margin_end(4);
+    menu_bar.set_margin_top(2);
+    menu_bar.set_margin_bottom(2);
     let (menu_file, file_menu_box) = create_menu_button("Arquivo");
     let (menu_edit, edit_menu_box) = create_menu_button("Editar");
     let (menu_view, view_menu_box) = create_menu_button("Exibir");
@@ -564,11 +565,12 @@ pub(crate) fn create_document_controller(
         toolbar_host,
     } = params;
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
-    let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    toolbar.set_margin_top(6);
-    toolbar.set_margin_bottom(6);
-    toolbar.set_margin_start(12);
-    toolbar.set_margin_end(12);
+    let toolbar = gtk::Box::new(gtk::Orientation::Horizontal, 4);
+    toolbar.set_hexpand(true);
+    toolbar.set_margin_top(2);
+    toolbar.set_margin_bottom(2);
+    toolbar.set_margin_start(8);
+    toolbar.set_margin_end(8);
 
     let previous_button = action_button("go-previous-symbolic", "Previous page");
     let page_spin = gtk::SpinButton::with_range(1.0, 1.0, 1.0);
@@ -578,6 +580,7 @@ pub(crate) fn create_document_controller(
     let next_button = action_button("go-next-symbolic", "Next page");
     let search_entry = gtk::SearchEntry::new();
     search_entry.set_placeholder_text(Some("Search in document"));
+    search_entry.set_hexpand(true);
     let search_button = action_button("system-search-symbolic", "Search in this document");
     let prev_match = action_button("go-up-symbolic", "Previous match");
     let next_match = action_button("go-down-symbolic", "Next match");
