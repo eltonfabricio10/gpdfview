@@ -199,8 +199,8 @@ pub fn apply_render_request(
     let path = path?;
     let normalized_scale = sanitize_scale(scale);
     let normalized_rotation = normalize_rotation(rotation);
-    let normalized_page_index = if state.page_count == 0 {
-        0
+    let normalized_page_index = if state.page_count <= 0 {
+        page_index.max(0)
     } else {
         page_index.clamp(0, state.page_count - 1)
     };
@@ -227,6 +227,28 @@ mod tests {
         assert_eq!(LayoutMode::SinglePage.toggle(), LayoutMode::Continuous);
         assert_eq!(LayoutMode::Continuous.toggle(), LayoutMode::TwoPage);
         assert_eq!(LayoutMode::TwoPage.toggle(), LayoutMode::SinglePage);
+    }
+
+    #[test]
+    fn initial_render_preserves_saved_page_until_page_count_is_known() {
+        let mut state = ViewerState::default();
+        let request = super::apply_render_request(
+            &mut state,
+            Some(std::path::PathBuf::from("saved.pdf")),
+            7,
+            1.0,
+            0,
+        ).unwrap();
+        assert_eq!(request.1, 7);
+        state.page_count = 3;
+        let request = super::apply_render_request(
+            &mut state,
+            Some(std::path::PathBuf::from("saved.pdf")),
+            7,
+            1.0,
+            0,
+        ).unwrap();
+        assert_eq!(request.1, 2);
     }
 
     #[test]

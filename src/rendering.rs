@@ -154,7 +154,6 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
         if page.generation != state.generation
             || state.path.as_ref() != Some(&page.path)
             || state.rotation != page.rotation
-            || (state.scale * 1000.0).round() as u32 != (page.scale * 1000.0).round() as u32
         {
             return;
         }
@@ -214,6 +213,8 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
         state.page_index = page.page_index;
         state.page_width_points = page.page_width_points;
         state.page_height_points = page.page_height_points;
+        // Present the effective zoom when the engine reduces a raster to its memory budget.
+        state.scale = page.scale;
         state.rotation = page.rotation;
         if state.page_index >= 0 {
             state.pending_search_rect.take()
@@ -522,6 +523,7 @@ fn complete_document_search(controller: &ViewerController, response: crate::app:
             state.search_highlights.clear();
             state.search_query.clear();
             state.pending_search_rect = None;
+            drop(state);
             controller.search_previous_button.set_sensitive(false);
             controller.search_next_button.set_sensitive(false);
             controller.area.queue_draw();

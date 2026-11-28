@@ -3,15 +3,18 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="${DIST_DIR:-$ROOT_DIR/dist}"
-TARGET_DIR="$ROOT_DIR/target/release"
-ARCHIVE_PATH="$DIST_DIR/gpdfview-linux-x86_64.tar.gz"
-
+# Resolve relative destinations against the caller's working directory, not ROOT_DIR.
 mkdir -p "$DIST_DIR"
+DIST_DIR="$(cd "$DIST_DIR" && pwd)"
+TARGET_DIR="$ROOT_DIR/target"
+ARCH="$(uname -m)"
+ARCHIVE_PATH="$DIST_DIR/gpdfview-linux-$ARCH.tar.gz"
+
 cd "$ROOT_DIR"
 
-cargo build --release --bin gpdfview
+cargo build --locked --release --bin gpdfview --target-dir "$TARGET_DIR"
 
-cp "$TARGET_DIR/gpdfview" "$DIST_DIR/gpdfview"
+cp "$TARGET_DIR/release/gpdfview" "$DIST_DIR/gpdfview"
 cp "$ROOT_DIR/README.md" "$DIST_DIR/README.md"
 cp "$ROOT_DIR/LICENSE" "$DIST_DIR/LICENSE"
 

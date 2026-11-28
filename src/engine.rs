@@ -126,8 +126,7 @@ where
     let (rotated_width, rotated_height) =
         rotated_page_dimensions(page_width_points, page_height_points, rotation);
 
-    let max_edge = f64::from(max_edge_px.max(16));
-    let scale = (max_edge / rotated_width.max(rotated_height)).clamp(0.05, 1.0);
+    let scale = thumbnail_scale(rotated_width, rotated_height, max_edge_px)?;
     let width = (rotated_width * scale).ceil() as i32;
     let height = (rotated_height * scale).ceil() as i32;
     if width <= 0 || height <= 0 {
@@ -661,6 +660,11 @@ fn rotated_page_dimensions(width_points: f64, height_points: f64, rotation: i32)
 fn render_page(document: &Document, request: &RenderRequest) -> Result<RenderedPage, String> {
     let _guard = crate::poppler_lock::lock()?;
     let page_count = document.n_pages();
+    // A saved page can exceed the new length if the document was replaced.
+    let mut request = request.clone();
+    if !request.prefetch && page_count > 0 {
+        request.page_index = request.page_index.clamp(0, page_count - 1);
+    }
     if request.page_index < 0 || request.page_index >= page_count {
         return Err(format!("Page {} does not exist", request.page_index + 1));
     }
@@ -672,7 +676,7 @@ fn render_page(document: &Document, request: &RenderRequest) -> Result<RenderedP
         rotated_page_dimensions(page_width_points, page_height_points, request.rotation);
     render_to_pixels(
         &page,
-        request,
+        &request,
         page_count,
         page_width_points,
         page_height_points,
@@ -741,6 +745,19 @@ fn render_to_pixels(
     })
 }
 
+fn thumbnail_scale(width: f64, height: f64, max_edge_px: i32) -> Result<f64, String> {
+    if !width.is_finite() || !height.is_finite() || width <= 0.0 || height <= 0.0 {
+        return Err("PDF page has invalid dimensions".into());
+    }
+    // Thumbnails must stay small even for gigantic PDF media boxes.
+    let max_edge = f64::from(max_edge_px.clamp(16, 1024));
+    let scale = (max_edge / width.max(height)).min(1.0);
+    if !scale.is_finite() || scale <= 0.0 {
+        return Err("PDF page dimensions exceed supported limits".into());
+    }
+    Ok(scale)
+}
+
 fn choose_render_scale(
     rotated_width_points: f64,
     rotated_height_points: f64,
@@ -780,6 +797,17 @@ mod tests {
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::thread;
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn thumbnail_dimensions_remain_bounded_for_giant_pages() {
+        for (width, height) in [(100_000.0_f64, 100_000.0_f64), (1.0, 1_000_000.0)] {
+            let scale = super::thumbnail_scale(width, height, 156).unwrap();
+            assert!((width * scale).ceil() <= 156.0);
+            assert!((height * scale).ceil() <= 156.0);
+        }
+        assert!(super::thumbnail_scale(f64::NAN, 100.0, 156).is_err());
+        assert!(super::thumbnail_scale(100.0, 0.0, 156).is_err());
+    }
 
     static NEXT_FIXTURE: AtomicU64 = AtomicU64::new(0);
 
@@ -903,7 +931,7 @@ mod tests {
     }
 
     #[test]
-    fn reports_invalid_page_requests_without_panicking() {
+    fn clamps_saved_page_to_replaced_document_length() {
         let fixture = PdfFixture::two_page();
         let renderer = PdfRenderer::new().expect("start worker");
         let generation = renderer.request(fixture.0.clone(), 99, 1.0, 0);
@@ -911,12 +939,12 @@ mod tests {
 
         loop {
             match renderer.try_recv() {
-                Ok(RenderResult::Error(error)) => {
-                    assert_eq!(error.generation, generation);
-                    assert!(error.message.contains("Page 100 does not exist"));
+                Ok(RenderResult::Page(page)) => {
+                    assert_eq!(page.generation, generation);
+                    assert_eq!(page.page_index, 1);
                     break;
                 }
-                Ok(RenderResult::Page(_)) => panic!("invalid page unexpectedly rendered"),
+                Ok(RenderResult::Error(error)) => panic!("saved page did not clamp: {error:?}"),
                 Err(std::sync::mpsc::TryRecvError::Empty) if Instant::now() < deadline => {
                     thread::sleep(Duration::from_millis(10));
                 }

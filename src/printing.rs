@@ -148,19 +148,44 @@ impl Drop for PrintService {
     }
 }
 
-struct TemporaryPdf(PathBuf);
+// The PDF may be opened by Cairo by pathname, so reserve its parent directory
+// exclusively before handing that pathname to any writer. Never reuse an
+// existing directory (or follow an existing symlink), even after a collision.
+struct TemporaryPdf(PathBuf, PathBuf);
 
 impl TemporaryPdf {
-    fn create() -> Self {
+    fn create() -> io::Result<Self> {
+        Self::create_in(&std::env::temp_dir())
+    }
+
+    fn create_in(parent: &Path) -> io::Result<Self> {
         static NEXT_TEMP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let id = NEXT_TEMP.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        Self(std::env::temp_dir().join(format!("gpdfview-print-{}-{id}.pdf", std::process::id())))
+        for _ in 0..128 {
+            let id = NEXT_TEMP.fetch_add(1, Ordering::Relaxed);
+            let directory = parent.join(format!("gpdfview-print-{}-{id}", std::process::id()));
+            let mut builder = std::fs::DirBuilder::new();
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::DirBuilderExt;
+                builder.mode(0o700);
+            }
+            match builder.create(&directory) {
+                Ok(()) => return Ok(Self(directory.join("document.pdf"), directory)),
+                Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(error),
+            }
+        }
+        Err(io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "Não foi possível reservar um diretório temporário exclusivo para impressão.",
+        ))
     }
 }
 
 impl Drop for TemporaryPdf {
     fn drop(&mut self) {
         let _ = std::fs::remove_file(&self.0);
+        let _ = std::fs::remove_dir(&self.1);
     }
 }
 
@@ -175,7 +200,11 @@ fn print_pdf(path: &Path, options: &PrintOptions) -> Result<PrintOutcome, String
             message: format!("PDF enviado diretamente à impressora padrão. {output}"),
         }),
         Err(direct_error) => {
-            let rendered = TemporaryPdf::create();
+            let rendered = TemporaryPdf::create().map_err(|error| {
+                format!(
+                    "Falha no envio direto ({direct_error}); falha na criação do temporário ({error})"
+                )
+            })?;
             render_for_printing(path, &rendered.0, &options).map_err(|render_error| {
                 format!(
                     "Falha no envio direto ({direct_error}); falha na geração alternativa ({render_error})"
@@ -311,12 +340,77 @@ mod tests {
     use gtk4::gio;
     use gtk4::gio::prelude::*;
     use poppler::Document;
+    use std::path::PathBuf;
+
+    #[test]
+    fn temporary_pdfs_have_unique_private_directories() {
+        let temporaries: Vec<_> = (0..64)
+            .map(|_| TemporaryPdf::create().expect("reserve temporary directory"))
+            .collect();
+        let directories: std::collections::HashSet<_> =
+            temporaries.iter().map(|pdf| &pdf.1).collect();
+        assert_eq!(directories.len(), temporaries.len());
+        for pdf in &temporaries {
+            assert_eq!(pdf.0.parent(), Some(pdf.1.as_path()));
+            assert!(pdf.1.is_dir());
+            assert!(!pdf.0.exists());
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let mode = std::fs::metadata(&pdf.1).expect("directory metadata")
+                    .permissions().mode();
+                assert_eq!(mode & 0o777, 0o700);
+            }
+        }
+    }
+
+    #[test]
+    fn temporary_pdf_cleans_file_and_directory_on_drop() {
+        let temporary = TemporaryPdf::create().expect("reserve temporary directory");
+        let path = temporary.0.clone();
+        let directory = temporary.1.clone();
+        std::fs::write(&path, b"partial PDF").expect("write temporary file");
+        drop(temporary);
+        assert!(!path.exists());
+        assert!(!directory.exists());
+    }
+
+    #[test]
+    fn temporary_pdf_cleans_directory_on_error_and_unwind() {
+        let mut directory = PathBuf::new();
+        let result: std::io::Result<()> = (|| {
+            let temporary = TemporaryPdf::create()?;
+            directory = temporary.1.clone();
+            Err(std::io::Error::new(std::io::ErrorKind::Other, "render failed"))
+        })();
+        assert!(result.is_err());
+        assert!(!directory.exists());
+
+        let temporary = TemporaryPdf::create().expect("reserve temporary directory");
+        let path = temporary.0.clone();
+        let directory = temporary.1.clone();
+        let result = std::panic::catch_unwind(move || {
+            let _temporary = temporary;
+            std::fs::write(&path, b"partial PDF").expect("write temporary file");
+            panic!("render failed");
+        });
+        assert!(result.is_err());
+        assert!(!directory.exists());
+    }
+
+    #[test]
+    fn temporary_pdf_creation_propagates_io_errors() {
+        let parent = TemporaryPdf::create().expect("reserve parent directory");
+        // A regular file cannot be used as a parent directory.
+        std::fs::write(&parent.0, b"not a directory").expect("write parent file");
+        assert!(TemporaryPdf::create_in(&parent.0).is_err());
+    }
 
     struct PdfFixture(TemporaryPdf);
 
     impl PdfFixture {
         fn create() -> Self {
-            let path = TemporaryPdf::create();
+            let path = TemporaryPdf::create().expect("reserve source PDF directory");
             let surface = PdfSurface::new(612.0, 792.0, &path.0).expect("create source PDF");
             for (page, (width, height)) in [(612.0, 792.0), (420.0, 600.0), (300.0, 500.0)]
                 .into_iter()
@@ -342,7 +436,7 @@ mod tests {
     #[test]
     fn fallback_preserves_all_pages_in_a_bounded_page_by_page_pass() {
         let source = PdfFixture::create();
-        let destination = TemporaryPdf::create();
+        let destination = TemporaryPdf::create().expect("reserve destination PDF directory");
 
         render_for_printing(&source.0 .0, &destination.0, &PrintOptions::default())
             .expect("render print fallback");
@@ -361,7 +455,7 @@ mod tests {
     #[test]
     fn fallback_applies_requested_scale_once_and_respects_page_range() {
         let source = PdfFixture::create();
-        let destination = TemporaryPdf::create();
+        let destination = TemporaryPdf::create().expect("reserve destination PDF directory");
         let options = PrintOptions {
             page_range: Some((2, 3)),
             scale_percent: 200,
@@ -387,7 +481,7 @@ mod tests {
 
     #[test]
     fn printing_a_missing_file_returns_a_clear_error() {
-        let missing = TemporaryPdf::create();
+        let missing = TemporaryPdf::create().expect("reserve missing input directory");
         let error = super::print_pdf(&missing.0, &PrintOptions::default())
             .expect_err("missing input must fail");
 

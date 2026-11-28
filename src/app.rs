@@ -314,6 +314,7 @@ impl ViewerController {
                 state.page_index = saved.page_index.max(0);
                 state.scale = crate::viewer_state::sanitize_scale(saved.scale);
                 state.rotation = crate::viewer_state::normalize_rotation(saved.rotation);
+                state.layout_mode = crate::viewer_state::LayoutMode::from_str(&saved.layout_mode);
             }
         }
         self.sync_layout_toggle_label();
