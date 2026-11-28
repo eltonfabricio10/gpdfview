@@ -1,8 +1,4 @@
 use crate::cache::LruCache;
-use crate::viewer_state::RenderKey;
-use std::cell::RefCell;
-use std::collections::HashMap;
-use crate::dialogs::build_document_properties_dialog;
 use crate::document_actions::OpenDocumentContext;
 use crate::engine::{PdfRenderer, RenderError, RenderedPage};
 use crate::keyboard::KeyAction;
