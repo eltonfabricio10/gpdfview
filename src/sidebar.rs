@@ -450,31 +450,27 @@ fn populate_pages_flow(
 }
 
 fn smooth_scroll_to_thumbnail(pages_flow: &gtk4::FlowBox, target_page: i32) {
-    let Some(target_button) = pages_flow
-        .first_child()
-        .and_then(|child| child.downcast::<gtk4::FlowBoxChild>().ok())
-    else {
-        return;
-    };
+    let mut current = pages_flow.first_child();
+    let mut target_flow_child = None;
 
-    let mut current = Some(target_button);
-    let mut found = None;
     while let Some(child) = current {
-        if let Ok(button) = child
+        if let Some(button) = child
             .first_child()
             .and_then(|w| w.downcast::<gtk4::Button>().ok())
         {
             if let Ok(Some(page)) = button.property::<Option<i32>>("page-index") {
                 if page == target_page {
-                    found = Some(child);
+                    target_flow_child = child.downcast::<gtk4::FlowBoxChild>().ok();
                     break;
                 }
             }
         }
-        current = child.next_sibling();
+        current = child
+            .next_sibling()
+            .and_then(|w| w.downcast::<gtk4::FlowBoxChild>().ok());
     }
 
-    let Some(target_flow_child) = found else {
+    let Some(target_flow_child) = target_flow_child else {
         return;
     };
 
@@ -493,7 +489,7 @@ fn smooth_scroll_to_thumbnail(pages_flow: &gtk4::FlowBox, target_page: i32) {
     }
 
     let target_value = (target_flow_child
-        .translate_coordinates(&pages_flow, 0.0, 0.0)
+        .translate_coordinates(pages_flow, 0.0, 0.0)
         .unwrap_or((0.0, 0.0))
         .0
         - adjustment.value())
@@ -511,8 +507,6 @@ fn smooth_scroll_to_thumbnail(pages_flow: &gtk4::FlowBox, target_page: i32) {
     let anim_target = Cell::new(target_value);
     let anim_adjustment = adjustment.clone();
 
-    let tick_id = Rc::new(Cell::new(0u32));
-    let tid = tick_id.clone();
     let tick_callback = move |_clock, _frame_time| {
         let elapsed = start_time.elapsed().as_secs_f64() * 1000.0;
         let progress = (elapsed / f64::from(ANIM_DURATION_MS)).clamp(0.0, 1.0);
@@ -521,15 +515,13 @@ fn smooth_scroll_to_thumbnail(pages_flow: &gtk4::FlowBox, target_page: i32) {
         anim_adjustment.set_value(value);
         if progress >= 1.0 {
             anim_adjustment.set_value(anim_target.get());
-            tid.set(0);
-            glib::ControlFlow::Break
+            gtk4::glib::ControlFlow::Break
         } else {
-            glib::ControlFlow::Continue
+            gtk4::glib::ControlFlow::Continue
         }
     };
 
-    let id = pages_flow.add_tick_callback(tick_callback);
-    tick_id.set(id);
+    pages_flow.add_tick_callback(tick_callback);
 }
 
 fn shift_thumbnail_window(
