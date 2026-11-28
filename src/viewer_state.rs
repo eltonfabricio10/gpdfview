@@ -119,14 +119,7 @@ impl ViewerState {
             return Vec::new();
         }
         let primary = self.page_index.clamp(0, self.page_count - 1);
-        if primary == 0 {
-            return vec![0];
-        }
-        let left = if primary % 2 == 0 {
-            primary - 1
-        } else {
-            primary
-        };
+        let left = primary - (primary % 2);
         let mut pages = vec![left];
         if left + 1 < self.page_count {
             pages.push(left + 1);
@@ -265,20 +258,20 @@ mod tests {
     }
 
     #[test]
-    fn facing_pages_keep_cover_single_and_pair_remaining_pages() {
+    fn facing_pages_pair_consecutive_pages() {
         let mut state = ViewerState {
             page_count: 6,
             ..ViewerState::default()
         };
 
         state.page_index = 0;
-        assert_eq!(state.two_page_layout_pages(), vec![0]);
+        assert_eq!(state.two_page_layout_pages(), vec![0, 1]);
         state.page_index = 1;
-        assert_eq!(state.two_page_layout_pages(), vec![1, 2]);
+        assert_eq!(state.two_page_layout_pages(), vec![0, 1]);
         state.page_index = 2;
-        assert_eq!(state.two_page_layout_pages(), vec![1, 2]);
+        assert_eq!(state.two_page_layout_pages(), vec![2, 3]);
         state.page_index = 5;
-        assert_eq!(state.two_page_layout_pages(), vec![5]);
+        assert_eq!(state.two_page_layout_pages(), vec![4, 5]);
     }
 
     #[test]
@@ -324,28 +317,28 @@ mod tests {
             page_count: 5,
             ..ViewerState::default()
         };
-        assert_eq!(state.two_page_layout_pages(), vec![3, 4]);
+        assert_eq!(state.two_page_layout_pages(), vec![2, 3]);
 
         let state = ViewerState {
             page_index: 0,
             page_count: 5,
             ..ViewerState::default()
         };
-        assert_eq!(state.two_page_layout_pages(), vec![0]);
+        assert_eq!(state.two_page_layout_pages(), vec![0, 1]);
 
         let state = ViewerState {
             page_index: 4,
             page_count: 5,
             ..ViewerState::default()
         };
-        assert_eq!(state.two_page_layout_pages(), vec![3, 4]);
+        assert_eq!(state.two_page_layout_pages(), vec![4]);
 
         let state = ViewerState {
             page_index: 6,
             page_count: 5,
             ..ViewerState::default()
         };
-        assert_eq!(state.two_page_layout_pages(), vec![3, 4]);
+        assert_eq!(state.two_page_layout_pages(), vec![4]);
     }
 
     #[test]

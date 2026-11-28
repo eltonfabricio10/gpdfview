@@ -385,12 +385,22 @@ fn populate_pages_flow(
             thumbnail.window_state.current_page.replace(current_page) != current_page;
         if path_changed || page_changed {
             *window = path.clone();
-            thumbnail.window_state.start.set(
-                page_range_for_sidebar(page_count, current_page)
-                    .first()
-                    .copied()
-                    .unwrap_or(0),
-            );
+            if path_changed {
+                thumbnail.window_state.start.set(
+                    page_range_for_sidebar(page_count, current_page)
+                        .first()
+                        .copied()
+                        .unwrap_or(0),
+                );
+            } else {
+                let current_start = thumbnail.window_state.start.get();
+                let window_end = (current_start + THUMBNAIL_WINDOW_SIZE).min(page_count);
+                if current_page < current_start || current_page >= window_end {
+                    let new_start = (current_page - THUMBNAIL_WINDOW_SIZE / 2)
+                        .clamp(0, (page_count - THUMBNAIL_WINDOW_SIZE).max(0));
+                    thumbnail.window_state.start.set(new_start);
+                }
+            }
         }
         let max_start = (page_count - 1).max(0);
         let start = thumbnail.window_state.start.get().clamp(0, max_start);
