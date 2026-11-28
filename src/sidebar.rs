@@ -195,7 +195,7 @@ fn build_page_thumbnail_button(
 ) -> gtk4::Button {
     let page_button = gtk4::Button::new();
     page_button.set_tooltip_text(Some(&format!("Ir para a página {}", page_index + 1)));
-    page_button.set_property("page-index", &page_index);
+    page_button.set_name(&format!("gpdfview-page-{page_index}"));
 
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
     content.set_margin_start(4);
@@ -449,6 +449,13 @@ fn populate_pages_flow(
     smooth_scroll_to_thumbnail(&pages_flow, current_page);
 }
 
+fn page_index_from_thumbnail_button(button: &gtk4::Button) -> Option<i32> {
+    let name = button.name()?;
+    name.as_str()
+        .strip_prefix("gpdfview-page-")
+        .and_then(|suffix| suffix.parse::<i32>().ok())
+}
+
 fn smooth_scroll_to_thumbnail(pages_flow: &gtk4::FlowBox, target_page: i32) {
     let mut current = pages_flow.first_child();
     let mut target_flow_child = None;
@@ -458,16 +465,12 @@ fn smooth_scroll_to_thumbnail(pages_flow: &gtk4::FlowBox, target_page: i32) {
             .first_child()
             .and_then(|w| w.downcast::<gtk4::Button>().ok())
         {
-            if let Ok(Some(page)) = button.property::<Option<i32>>("page-index") {
-                if page == target_page {
-                    target_flow_child = child.downcast::<gtk4::FlowBoxChild>().ok();
-                    break;
-                }
+            if page_index_from_thumbnail_button(&button) == Some(target_page) {
+                target_flow_child = child.downcast::<gtk4::FlowBoxChild>().ok();
+                break;
             }
         }
-        current = child
-            .next_sibling()
-            .and_then(|w| w.downcast::<gtk4::FlowBoxChild>().ok());
+        current = child.next_sibling();
     }
 
     let Some(target_flow_child) = target_flow_child else {
@@ -488,12 +491,14 @@ fn smooth_scroll_to_thumbnail(pages_flow: &gtk4::FlowBox, target_page: i32) {
         return;
     }
 
-    let target_value = (target_flow_child
-        .translate_coordinates(pages_flow, 0.0, 0.0)
-        .unwrap_or((0.0, 0.0))
-        .0
-        - adjustment.value())
-    .clamp(adjustment.lower(), adjustment.upper() - adjustment.page_size());
+    // `allocation()` do FlowBoxChild é expresso no sistema de coordenadas do
+    // FlowBox (o pai), que é exatamente o que a antiga `translate_coordinates`
+    // devolvia — sem depender da API depreciada no GTK 4.12.
+    let child_allocation = target_flow_child.allocation();
+    let target_value = (f64::from(child_allocation.x()) - adjustment.value()).clamp(
+        adjustment.lower(),
+        adjustment.upper() - adjustment.page_size(),
+    );
 
     let start_value = adjustment.value();
     let diff = target_value - start_value;
