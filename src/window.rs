@@ -1006,6 +1006,7 @@ pub(crate) fn create_document_controller(
             ..ViewerState::default()
         })),
         cache: Rc::new(RefCell::new(LruCache::new(crate::app::CACHE_LIMIT_BYTES))),
+        page_metadata: Rc::new(RefCell::new(HashMap::new())),
         surface: current_surface,
         area: drawing_area.clone(),
         scrolled,

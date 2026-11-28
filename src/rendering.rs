@@ -6,7 +6,7 @@ use std::time::Instant;
 use gtk4::cairo::{Format, ImageSurface};
 use gtk4::prelude::*;
 
-use crate::app::ViewerController;
+use crate::app::{CachedPageMetadata, ViewerController};
 use crate::engine::{RenderResult, RenderedPage};
 use crate::layout::continuous_content_height;
 use crate::session::remember_document_view;
@@ -122,6 +122,19 @@ pub(crate) fn request_render(
     let cached = { controller.cache.borrow_mut().get(&key).cloned() };
     if let Some(cached) = cached {
         *controller.surface.borrow_mut() = Some(cached);
+        if let Some(meta) = controller.page_metadata.borrow().get(&key).cloned() {
+            let mut state = controller.state.borrow_mut();
+            state.page_count = meta.page_count;
+            state.page_width_points = meta.page_width_points;
+            state.page_height_points = meta.page_height_points;
+            // Scale may have been reduced by the engine to fit the memory budget.
+            state.scale = key.scale();
+            drop(state);
+            controller.page_spin.set_range(1.0, f64::from(meta.page_count.max(1)));
+            controller.page_total.set_text(&format!("/ {}", meta.page_count));
+            controller.zoom_button.set_label(&format!("{:.0}%", key.scale() * 100.0));
+            controller.sync_layout_toggle_label();
+        }
         update_canvas_size(controller);
         controller.set_page_spin_value(f64::from(page_index + 1));
         controller.area.queue_draw();
@@ -193,7 +206,12 @@ pub(crate) fn present_page(controller: &ViewerController, page: RenderedPage) {
     controller
         .cache
         .borrow_mut()
-        .insert(key, page_surface.clone(), bytes);
+        .insert(key.clone(), page_surface.clone(), bytes);
+    controller.page_metadata.borrow_mut().insert(key, CachedPageMetadata {
+        page_count: page.page_count,
+        page_width_points: page.page_width_points,
+        page_height_points: page.page_height_points,
+    });
     if page.prefetch {
         let is_visible_companion = controller
             .state

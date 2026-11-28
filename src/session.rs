@@ -393,12 +393,11 @@ pub fn read_session_entries(path: &Path) -> Vec<PathBuf> {
 pub fn normalize_recent_paths(paths: Vec<PathBuf>) -> Vec<PathBuf> {
     let mut seen = std::collections::HashSet::new();
     let mut unique = Vec::new();
-    for path in paths.into_iter().rev() {
+    for path in paths {
         if seen.insert(path.clone()) {
             unique.push(path);
         }
     }
-    unique.reverse();
     unique
 }
 

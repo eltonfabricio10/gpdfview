@@ -1,4 +1,7 @@
 use crate::cache::LruCache;
+use crate::viewer_state::RenderKey;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use crate::dialogs::build_document_properties_dialog;
 use crate::document_actions::OpenDocumentContext;
 use crate::engine::{PdfRenderer, RenderError, RenderedPage};
@@ -90,6 +93,13 @@ fn normalize_print_page_range(
     }
 }
 
+#[derive(Clone, Debug)]
+pub(crate) struct CachedPageMetadata {
+    pub page_count: i32,
+    pub page_width_points: f64,
+    pub page_height_points: f64,
+}
+
 #[derive(Clone)]
 pub(crate) struct ViewerController {
     pub(crate) app: adw::Application,
@@ -98,6 +108,7 @@ pub(crate) struct ViewerController {
     pub(crate) printer: Rc<PrintService>,
     pub(crate) state: Rc<RefCell<ViewerState>>,
     pub(crate) cache: Rc<RefCell<LruCache<RenderKey, ImageSurface>>>,
+    pub(crate) page_metadata: Rc<RefCell<HashMap<RenderKey, CachedPageMetadata>>>,
     pub(crate) surface: Rc<RefCell<Option<ImageSurface>>>,
     pub(crate) area: gtk::DrawingArea,
     pub(crate) scrolled: gtk::ScrolledWindow,
@@ -162,6 +173,7 @@ impl ViewerController {
         drop(state);
         self.page_spin.set_sensitive(false);
         self.page_indicator.set_visible_child_name("empty");
+        self.page_metadata.borrow_mut().clear();
         self.previous_button.set_sensitive(false);
         self.next_button.set_sensitive(false);
         self.zoom_button.set_sensitive(false);
