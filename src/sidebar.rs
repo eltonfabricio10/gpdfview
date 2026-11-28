@@ -195,6 +195,7 @@ fn build_page_thumbnail_button(
 ) -> gtk4::Button {
     let page_button = gtk4::Button::new();
     page_button.set_tooltip_text(Some(&format!("Ir para a página {}", page_index + 1)));
+    page_button.set_property("page-index", &page_index);
 
     let content = gtk4::Box::new(gtk4::Orientation::Vertical, 4);
     content.set_margin_start(4);
@@ -381,26 +382,14 @@ fn populate_pages_flow(
     let start = {
         let mut window = thumbnail.window_state.path.borrow_mut();
         let path_changed = *window != path;
-        let page_changed =
-            thumbnail.window_state.current_page.replace(current_page) != current_page;
-        if path_changed || page_changed {
+        if path_changed {
             *window = path.clone();
-            if path_changed {
-                thumbnail.window_state.start.set(
-                    page_range_for_sidebar(page_count, current_page)
-                        .first()
-                        .copied()
-                        .unwrap_or(0),
-                );
-            } else {
-                let current_start = thumbnail.window_state.start.get();
-                let window_end = (current_start + THUMBNAIL_WINDOW_SIZE).min(page_count);
-                if current_page < current_start || current_page >= window_end {
-                    let new_start = (current_page - THUMBNAIL_WINDOW_SIZE / 2)
-                        .clamp(0, (page_count - THUMBNAIL_WINDOW_SIZE).max(0));
-                    thumbnail.window_state.start.set(new_start);
-                }
-            }
+            thumbnail.window_state.start.set(
+                page_range_for_sidebar(page_count, current_page)
+                    .first()
+                    .copied()
+                    .unwrap_or(0),
+            );
         }
         let max_start = (page_count - 1).max(0);
         let start = thumbnail.window_state.start.get().clamp(0, max_start);
@@ -457,6 +446,90 @@ fn populate_pages_flow(
         page_button.set_size_request(sizing.button_width, -1);
         pages_flow.insert(&page_button, -1);
     }
+    smooth_scroll_to_thumbnail(&pages_flow, current_page);
+}
+
+fn smooth_scroll_to_thumbnail(pages_flow: &gtk4::FlowBox, target_page: i32) {
+    let Some(target_button) = pages_flow
+        .first_child()
+        .and_then(|child| child.downcast::<gtk4::FlowBoxChild>().ok())
+    else {
+        return;
+    };
+
+    let mut current = Some(target_button);
+    let mut found = None;
+    while let Some(child) = current {
+        if let Ok(button) = child
+            .first_child()
+            .and_then(|w| w.downcast::<gtk4::Button>().ok())
+        {
+            if let Ok(Some(page)) = button.property::<Option<i32>>("page-index") {
+                if page == target_page {
+                    found = Some(child);
+                    break;
+                }
+            }
+        }
+        current = child.next_sibling();
+    }
+
+    let Some(target_flow_child) = found else {
+        return;
+    };
+
+    let Some(parent_widget) = target_flow_child.parent() else {
+        return;
+    };
+    let Ok(scrolled) = parent_widget
+        .clone()
+        .downcast::<gtk4::ScrolledWindow>()
+    else {
+        return;
+    };
+    let adjustment = scrolled.hadjustment();
+    if adjustment.value() >= adjustment.upper() - 1.0 {
+        return;
+    }
+
+    let target_value = (target_flow_child
+        .translate_coordinates(&pages_flow, 0.0, 0.0)
+        .unwrap_or((0.0, 0.0))
+        .0
+        - adjustment.value())
+    .clamp(adjustment.lower(), adjustment.upper() - adjustment.page_size());
+
+    let start_value = adjustment.value();
+    let diff = target_value - start_value;
+    if diff.abs() < 1.0 {
+        return;
+    }
+
+    const ANIM_DURATION_MS: u32 = 250;
+    let start_time = Instant::now();
+    let anim_start = Cell::new(start_value);
+    let anim_target = Cell::new(target_value);
+    let anim_adjustment = adjustment.clone();
+
+    let tick_id = Rc::new(Cell::new(0u32));
+    let tid = tick_id.clone();
+    let tick_callback = move |_clock, _frame_time| {
+        let elapsed = start_time.elapsed().as_secs_f64() * 1000.0;
+        let progress = (elapsed / f64::from(ANIM_DURATION_MS)).clamp(0.0, 1.0);
+        let eased = 1.0 - (1.0 - progress).powi(3);
+        let value = anim_start.get() + (anim_target.get() - anim_start.get()) * eased;
+        anim_adjustment.set_value(value);
+        if progress >= 1.0 {
+            anim_adjustment.set_value(anim_target.get());
+            tid.set(0);
+            glib::ControlFlow::Break
+        } else {
+            glib::ControlFlow::Continue
+        }
+    };
+
+    let id = pages_flow.add_tick_callback(tick_callback);
+    tick_id.set(id);
 }
 
 fn shift_thumbnail_window(
