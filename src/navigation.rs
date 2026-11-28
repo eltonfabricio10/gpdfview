@@ -133,7 +133,23 @@ fn navigate_to_with_history(controller: &ViewerController, page_index: i32, reco
             None => return,
         }
     };
+    let (layout_mode, page_height_points) = {
+        let state = controller.state.borrow();
+        (
+            state.layout_mode,
+            state.page_height_points,
+        )
+    };
     controller.request_render(path, page_index, scale, rotation);
+    if layout_mode == crate::viewer_state::LayoutMode::Continuous && page_height_points > 0.0 {
+        let adjustment = controller.scrolled.vadjustment();
+        let target = continuous_page_top(page_index, page_height_points, scale);
+        let lower = adjustment.lower();
+        let upper = adjustment.upper();
+        let page_size = adjustment.page_size();
+        let max_value = (upper - page_size).max(lower);
+        adjustment.set_value(target.clamp(lower, max_value));
+    }
 }
 
 pub(crate) fn go_page_back(controller: &ViewerController) {
